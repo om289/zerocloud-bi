@@ -984,3 +984,369 @@ button, input, textarea, select {
     fill: #333333 !important;
   }
 }
+
+/* ==========================================================================
+   ENTERPRISE RETAIL BI STYLES
+   ========================================================================== */
+
+/* Toast System */
+.toast-notification {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  padding: 14px 20px;
+  background-color: hsla(var(--bg-card), 0.9);
+  border: 1px solid hsl(var(--border));
+  border-left: 4px solid hsl(var(--accent));
+  border-radius: var(--radius-sm);
+  color: hsl(var(--text-main));
+  font-size: 0.85rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), var(--shadow-glow);
+  backdrop-filter: blur(10px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: toastSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.toast-notification.success {
+  border-left-color: hsl(var(--success));
+}
+
+.toast-notification.error {
+  border-left-color: hsl(var(--error));
+}
+
+.toast-notification.info {
+  border-left-color: hsl(var(--accent-secondary));
+}
+
+@keyframes toastSlideIn {
+  from { transform: translateY(100px) scale(0.9); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+/* Autocomplete suggestions */
+.autocomplete-suggestions {
+  position: absolute;
+  background-color: hsl(var(--bg-card));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 999;
+  width: 250px;
+}
+
+.autocomplete-item {
+  padding: 8px 12px;
+  font-size: 0.75rem;
+  font-family: monospace;
+  cursor: pointer;
+  color: hsl(var(--text-muted));
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+}
+
+.autocomplete-item:hover,
+.autocomplete-item.active {
+  background-color: hsl(var(--bg-card-glow));
+  color: hsl(var(--text-main));
+}
+
+.autocomplete-type {
+  font-size: 0.65rem;
+  color: hsl(var(--accent-secondary));
+  text-transform: uppercase;
+}
+
+/* KPI Summary Widgets */
+.kpi-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.kpi-card {
+  background-color: hsl(var(--bg-card));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius-md);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: relative;
+  overflow: hidden;
+  transition: var(--transition-fast);
+}
+
+.kpi-card:hover {
+  border-color: hsla(263, 90%, 65%, 0.2);
+  transform: translateY(-2px);
+}
+
+.kpi-card::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, hsl(var(--accent)), transparent);
+  opacity: 0;
+  transition: var(--transition-normal);
+}
+
+.kpi-card:hover::after {
+  opacity: 1;
+}
+
+.kpi-title {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: hsl(var(--text-muted));
+  font-weight: 600;
+}
+
+.kpi-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-family: 'Outfit', sans-serif;
+  color: hsl(var(--text-main));
+}
+
+.kpi-subtitle {
+  font-size: 0.7rem;
+  color: hsl(var(--text-dark));
+}
+
+/* CLI terminal emulator */
+.cli-terminal {
+  flex: 1;
+  background-color: #05070a;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius-md);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  font-family: 'Fira Code', 'Courier New', Courier, monospace;
+  font-size: 0.85rem;
+  color: #a7b5eb;
+  overflow: hidden;
+}
+
+.cli-log {
+  flex: 1;
+  overflow-y: auto;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 8px;
+}
+
+.cli-row {
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.cli-cmd {
+  color: hsl(var(--accent-secondary));
+  font-weight: bold;
+}
+
+.cli-output {
+  color: hsl(var(--text-main));
+}
+
+.cli-error {
+  color: hsl(var(--error));
+}
+
+.cli-input-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid hsl(var(--border));
+  padding-top: 10px;
+}
+
+.cli-prompt {
+  color: hsl(var(--accent));
+  font-weight: bold;
+}
+
+.cli-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: inherit;
+  color: #fff;
+  font-size: 0.85rem;
+}
+
+/* Pivot table layout styles */
+.pivot-builder-grid {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 20px;
+  height: 100%;
+  overflow: hidden;
+}
+
+.pivot-config {
+  background-color: hsl(var(--bg-card));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius-md);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+}
+
+.pivot-dropzone-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pivot-drop-target {
+  border: 2px dashed hsl(var(--border));
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  background-color: rgba(0, 0, 0, 0.15);
+  min-height: 50px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.pivot-field-tag {
+  background-color: hsla(263, 90%, 65%, 0.12);
+  border: 1px solid hsla(263, 90%, 65%, 0.3);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 0.75rem;
+  font-family: monospace;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: hsl(var(--text-main));
+}
+
+.pivot-field-remove {
+  background: none;
+  border: none;
+  color: hsl(var(--text-dark));
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.pivot-field-remove:hover {
+  color: hsl(var(--error));
+}
+
+.pivot-results-panel {
+  flex: 1;
+  overflow: auto;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius-md);
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.pivot-matrix-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.8rem;
+  text-align: left;
+}
+
+.pivot-matrix-table th, 
+.pivot-matrix-table td {
+  border: 1px solid hsl(var(--border));
+  padding: 8px 12px;
+}
+
+.pivot-matrix-table th {
+  background-color: hsl(var(--bg-card));
+  color: hsl(var(--text-main));
+  font-weight: 600;
+}
+
+.pivot-row-total, 
+.pivot-col-total {
+  font-weight: bold;
+  background-color: rgba(255, 255, 255, 0.03);
+  color: hsl(var(--accent-secondary));
+}
+
+/* Explain plan tree visualizer */
+.explain-plan-container {
+  padding: 16px;
+  background-color: rgba(0, 0, 0, 0.2);
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius-md);
+  max-height: 300px;
+  overflow-y: auto;
+  font-family: monospace;
+  font-size: 0.8rem;
+  margin-top: 10px;
+}
+
+.plan-node {
+  border-left: 2px solid hsl(var(--border));
+  padding-left: 14px;
+  margin-top: 8px;
+}
+
+.plan-node-header {
+  color: hsl(var(--accent-secondary));
+  font-weight: bold;
+}
+
+.plan-node-detail {
+  color: hsl(var(--text-muted));
+  font-size: 0.75rem;
+}
+
+/* Dynamic Grid Cols */
+.grid-cols-1 {
+  grid-template-columns: 1fr !important;
+}
+
+.grid-cols-2 {
+  grid-template-columns: repeat(2, 1fr) !important;
+}
+
+.grid-cols-3 {
+  grid-template-columns: repeat(3, 1fr) !important;
+}
+
+/* NLQ Input Styling */
+.nlq-container {
+  display: flex;
+  gap: 10px;
+  background-color: hsl(var(--bg-card));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  align-items: center;
+}
+
+.nlq-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 0.85rem;
+  color: hsl(var(--text-main));
+}

@@ -1,30 +1,53 @@
-import React, { memo } from 'react';
+import React, { useState, useEffect, memo } from 'react';
 import { Copy, Plus, X } from 'lucide-react';
 
 const SqlSnippets = memo(function SqlSnippets({ activeTable, columns, onInjectQuery, onClose }) {
   const table = activeTable || 'your_table';
   
-  // Intelligently guess the best matching columns from active schema types
-  const numericCol = columns?.find(c => 
-    c.type.includes('INT') || 
-    c.type.includes('DOUBLE') || 
-    c.type.includes('FLOAT') || 
-    c.type.includes('NUMERIC') ||
-    c.name.toLowerCase() === 'sales' || 
-    c.name.toLowerCase() === 'quantity'
-  )?.name || 'numeric_column';
-  
-  const dateCol = columns?.find(c => 
-    c.type.includes('DATE') || 
-    c.type.includes('TIME') || 
-    c.name.toLowerCase().includes('date')
-  )?.name || 'date_column';
-  
-  const groupCol = columns?.find(c => 
-    c.type.includes('VARCHAR') || 
-    c.name.toLowerCase().includes('category') || 
-    c.name.toLowerCase().includes('region')
-  )?.name || 'category_column';
+  // States for dynamic column mapping
+  const [selectedDateCol, setSelectedDateCol] = useState('');
+  const [selectedNumCol, setSelectedNumCol] = useState('');
+  const [selectedGroupCol, setSelectedGroupCol] = useState('');
+
+  // Initial guesses on load or table change
+  useEffect(() => {
+    if (columns && columns.length > 0) {
+      const dateC = columns.find(c => 
+        c.type.includes('DATE') || 
+        c.type.includes('TIME') || 
+        c.name.toLowerCase().includes('date') ||
+        c.name.toLowerCase().includes('year')
+      )?.name || columns[0].name;
+
+      const numC = columns.find(c => 
+        c.type.includes('INT') || 
+        c.type.includes('DOUBLE') || 
+        c.type.includes('FLOAT') || 
+        c.type.includes('NUMERIC') ||
+        c.name.toLowerCase().includes('sales') || 
+        c.name.toLowerCase().includes('quantity') ||
+        c.name.toLowerCase().includes('id') ||
+        c.name.toLowerCase().includes('power')
+      )?.name || columns[Math.min(1, columns.length - 1)]?.name || columns[0].name;
+
+      const groupC = columns.find(c => 
+        c.type.includes('VARCHAR') || 
+        c.type.includes('TEXT') ||
+        c.name.toLowerCase().includes('category') || 
+        c.name.toLowerCase().includes('region') ||
+        c.name.toLowerCase().includes('publisher') ||
+        c.name.toLowerCase().includes('alignment')
+      )?.name || columns[0].name;
+
+      setSelectedDateCol(dateC);
+      setSelectedNumCol(numC);
+      setSelectedGroupCol(groupC);
+    }
+  }, [columns]);
+
+  const dateCol = selectedDateCol || 'date_column';
+  const numericCol = selectedNumCol || 'numeric_column';
+  const groupCol = selectedGroupCol || 'category_column';
 
   const snippets = [
     {
@@ -70,6 +93,34 @@ const SqlSnippets = memo(function SqlSnippets({ activeTable, columns, onInjectQu
         <button className="table-action-btn" onClick={onClose} style={{ padding: '6px' }}>
           <X size={16} />
         </button>
+      </div>
+
+      {/* Interactive Column Mapper */}
+      <div style={{ padding: '12px 20px', borderBottom: '1px solid hsl(var(--border))', backgroundColor: 'rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'hsl(var(--text-muted))', textTransform: 'uppercase' }}>Template Column Mapping</span>
+        
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+            <span style={{ fontSize: '0.65rem', color: 'hsl(var(--text-dark))' }}>Date Field</span>
+            <select className="form-select" style={{ fontSize: '0.7rem', padding: '2px 4px', height: '24px' }} value={selectedDateCol} onChange={(e) => setSelectedDateCol(e.target.value)}>
+              {columns.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+            </select>
+          </div>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+            <span style={{ fontSize: '0.65rem', color: 'hsl(var(--text-dark))' }}>Numeric Field</span>
+            <select className="form-select" style={{ fontSize: '0.7rem', padding: '2px 4px', height: '24px' }} value={selectedNumCol} onChange={(e) => setSelectedNumCol(e.target.value)}>
+              {columns.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+            </select>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+            <span style={{ fontSize: '0.65rem', color: 'hsl(var(--text-dark))' }}>Category Field</span>
+            <select className="form-select" style={{ fontSize: '0.7rem', padding: '2px 4px', height: '24px' }} value={selectedGroupCol} onChange={(e) => setSelectedGroupCol(e.target.value)}>
+              {columns.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+            </select>
+          </div>
+        </div>
       </div>
 
       <div className="snippets-content">

@@ -1,7 +1,12 @@
-import React, { useState, useEffect, memo } from 'react';
+import React, { useState, useEffect, useMemo, memo } from 'react';
 import { Plus, Trash2, Code, Play } from 'lucide-react';
 
-const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, columns, onRunQuery, isRunning }) {
+const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, columns, tables = [], onRunQuery, isRunning }) {
+  // Joins Configuration
+  const [joins, setJoins] = useState([]); // Array of { joinTable: '', joinType: 'INNER JOIN', activeKey: '', joinKey: '' }
+  // Calculated Fields
+  const [calcFields, setCalcFields] = useState([]); // Array of { expression: '', alias: '' }
+
   const [selectedColumns, setSelectedColumns] = useState([]);
   const [aggregates, setAggregates] = useState([]);
   const [filters, setFilters] = useState([]);
@@ -12,12 +17,57 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
 
   // Reset inputs when selected active table changes
   useEffect(() => {
+    setJoins([]);
+    setCalcFields([]);
     setSelectedColumns([]);
     setAggregates([]);
     setFilters([]);
     setGroupBy([]);
     setSortBy({ column: '', direction: 'DESC' });
   }, [activeTable]);
+
+  // Combine columns from active table and joined tables
+  const availableColumns = useMemo(() => {
+    if (!activeTable) return [];
+    
+    // Add columns from active table, prefixed with table name
+    const list = columns.map(c => ({
+      name: `${activeTable}.${c.name}`,
+      shortName: c.name,
+      tableName: activeTable,
+      type: c.type
+    }));
+
+    // Add columns from joined tables
+    joins.forEach(join => {
+      if (!join.joinTable) return;
+      const joinedTableObj = tables.find(t => t.name === join.joinTable);
+      if (joinedTableObj) {
+        joinedTableObj.columns.forEach(c => {
+          list.push({
+            name: `${join.joinTable}.${c.name}`,
+            shortName: c.name,
+            tableName: join.joinTable,
+            type: c.type
+          });
+        });
+      }
+    });
+
+    return list;
+  }, [activeTable, columns, joins, tables]);
+
+  // Auto-Group By recommender: if aggregates exist, dimension columns should be in group by
+  useEffect(() => {
+    if (aggregates.length > 0) {
+      // Find columns that are checked as dimensions
+      const dimensionCols = selectedColumns.filter(c => !c.includes('('));
+      // Auto-set them in Group By
+      setGroupBy(dimensionCols);
+    } else {
+      setGroupBy([]);
+    }
+  }, [selectedColumns, aggregates]);
 
   // Re-generate SQL on any parameter changes
   useEffect(() => {
@@ -28,12 +78,13 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
 
     let selectClause = '';
     let fromClause = `FROM ${activeTable}`;
+    let joinClause = '';
     let whereClause = '';
     let groupByClause = '';
     let orderByClause = '';
     let limitClause = `LIMIT ${limit}`;
 
-    // Select dimensions & aggregated metrics
+    // Select dimensions, metrics & calculated fields
     const selectParts = [];
     selectedColumns.forEach(col => {
       selectParts.push(col);
@@ -41,7 +92,15 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
 
     aggregates.forEach(agg => {
       if (agg.column && agg.function) {
-        selectParts.push(`${agg.function}(${agg.column}) AS ${agg.function.toLowerCase()}_${agg.column}`);
+        // Safe alias generation by replacing dot and parens
+        const safeAlias = `${agg.function.toLowerCase()}_${agg.column.replace(/\./g, '_')}`;
+        selectParts.push(`${agg.function}(${agg.column}) AS ${safeAlias}`);
+      }
+    });
+
+    calcFields.forEach(calc => {
+      if (calc.expression && calc.alias) {
+        selectParts.push(`${calc.expression} AS ${calc.alias}`);
       }
     });
 
@@ -51,22 +110,45 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
       selectClause = `SELECT \n  ${selectParts.join(',\n  ')}`;
     }
 
+    // Joins SQL Compilation
+    joins.forEach(join => {
+      if (join.joinTable && join.activeKey && join.joinKey) {
+        joinClause += `\n${join.joinType} ${join.joinTable} ON ${join.activeKey} = ${join.joinTable}.${join.joinKey}`;
+      }
+    });
+
     // Filters (WHERE)
     if (filters.length > 0) {
       const filterParts = filters
         .filter(f => f.column && f.operator)
         .map(f => {
           let val = f.value;
-          if (f.operator === 'LIKE') {
-            return `${f.column} LIKE '%${val}%'`;
-          }
+          const colInfo = availableColumns.find(c => c.name === f.column);
+          const isString = colInfo && (colInfo.type.includes('VARCHAR') || colInfo.type.includes('TEXT'));
+
           if (f.operator === 'IS NULL' || f.operator === 'IS NOT NULL') {
             return `${f.column} ${f.operator}`;
           }
+
+          if (f.operator === 'BETWEEN') {
+            const val2 = f.value2 || '';
+            if (isString) {
+              return `${f.column} BETWEEN '${val}' AND '${val2}'`;
+            }
+            return `${f.column} BETWEEN ${val} AND ${val2}`;
+          }
+
+          if (f.operator === 'IN') {
+            // Split by comma
+            const items = val.split(',').map(x => x.trim());
+            const formattedItems = items.map(item => isString ? `'${item}'` : item).join(', ');
+            return `${f.column} IN (${formattedItems})`;
+          }
+
+          if (f.operator === 'LIKE') {
+            return `${f.column} LIKE '%${val}%'`;
+          }
           
-          // Identify if target column is a text string
-          const colInfo = columns.find(c => c.name === f.column);
-          const isString = colInfo && colInfo.type.includes('VARCHAR');
           if (isString) {
             return `${f.column} ${f.operator} '${val}'`;
           }
@@ -91,7 +173,7 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
     // Construct full SQL query
     const fullSql = [
       selectClause,
-      fromClause,
+      fromClause + joinClause,
       whereClause,
       groupByClause,
       orderByClause,
@@ -99,7 +181,7 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
     ].filter(s => !!s).join('\n');
 
     setGeneratedSql(fullSql);
-  }, [activeTable, selectedColumns, aggregates, filters, groupBy, sortBy, limit, columns]);
+  }, [activeTable, selectedColumns, aggregates, calcFields, joins, filters, groupBy, sortBy, limit, availableColumns]);
 
   const handleToggleColumn = (colName) => {
     setSelectedColumns(prev => 
@@ -107,8 +189,49 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
     );
   };
 
+  const handleAddJoin = () => {
+    const otherTables = tables.filter(t => t.name !== activeTable);
+    if (otherTables.length === 0) return;
+    setJoins(prev => [...prev, { 
+      joinTable: otherTables[0]?.name || '', 
+      joinType: 'INNER JOIN', 
+      activeKey: columns[0]?.name ? `${activeTable}.${columns[0].name}` : '', 
+      joinKey: otherTables[0]?.columns[0]?.name || '' 
+    }]);
+  };
+
+  const handleRemoveJoin = (idx) => {
+    setJoins(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleUpdateJoin = (idx, field, value) => {
+    setJoins(prev => prev.map((j, i) => {
+      if (i !== idx) return j;
+      const updated = { ...j, [field]: value };
+      
+      // Auto-set join key if table changed
+      if (field === 'joinTable') {
+        const targetObj = tables.find(t => t.name === value);
+        updated.joinKey = targetObj?.columns[0]?.name || '';
+      }
+      return updated;
+    }));
+  };
+
+  const handleAddCalcField = () => {
+    setCalcFields(prev => [...prev, { expression: '', alias: 'new_metric' }]);
+  };
+
+  const handleRemoveCalcField = (idx) => {
+    setCalcFields(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleUpdateCalcField = (idx, field, value) => {
+    setCalcFields(prev => prev.map((c, i) => i === idx ? { ...c, [field]: value } : c));
+  };
+
   const handleAddAggregate = () => {
-    setAggregates(prev => [...prev, { column: columns[0]?.name || '', function: 'SUM' }]);
+    setAggregates(prev => [...prev, { column: availableColumns[0]?.name || '', function: 'SUM' }]);
   };
 
   const handleRemoveAggregate = (index) => {
@@ -120,7 +243,7 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
   };
 
   const handleAddFilter = () => {
-    setFilters(prev => [...prev, { column: columns[0]?.name || '', operator: '=', value: '' }]);
+    setFilters(prev => [...prev, { column: availableColumns[0]?.name || '', operator: '=', value: '', value2: '' }]);
   };
 
   const handleRemoveFilter = (index) => {
@@ -131,25 +254,69 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
     setFilters(prev => prev.map((f, i) => i === index ? { ...f, [field]: value } : f));
   };
 
-  const handleToggleGroupBy = (colName) => {
-    setGroupBy(prev => 
-      prev.includes(colName) ? prev.filter(c => c !== colName) : [...prev, colName]
-    );
-  };
-
   const handleRunBuildQuery = () => {
     if (!generatedSql || isRunning) return;
     onRunQuery(generatedSql);
   };
 
-  if (!activeTable) {
+  const renderFilterValueInput = (filter, idx) => {
+    const colInfo = availableColumns.find(c => c.name === filter.column);
+    const isBool = colInfo?.type.includes('BOOL');
+    const isNum = colInfo?.type.includes('INT') || colInfo?.type.includes('DOUBLE') || colInfo?.type.includes('FLOAT') || colInfo?.type.includes('NUMERIC');
+    const isDate = colInfo?.type.includes('DATE') || colInfo?.type.includes('TIME');
+
+    if (['IS NULL', 'IS NOT NULL'].includes(filter.operator)) return null;
+
+    if (isBool) {
+      return (
+        <select 
+          className="form-select"
+          value={filter.value}
+          onChange={(e) => handleUpdateFilter(idx, 'value', e.target.value)}
+          style={{ padding: '4px 6px', fontSize: '0.75rem', height: '28px', backgroundColor: 'hsl(var(--bg-main))', flex: 1.2 }}
+        >
+          <option value="true">TRUE</option>
+          <option value="false">FALSE</option>
+        </select>
+      );
+    }
+
+    if (filter.operator === 'BETWEEN') {
+      return (
+        <div style={{ display: 'flex', gap: '4px', flex: 1.2 }}>
+          <input 
+            type={isNum ? "number" : isDate ? "date" : "text"} 
+            className="form-select" 
+            placeholder="min"
+            value={filter.value}
+            onChange={(e) => handleUpdateFilter(idx, 'value', e.target.value)}
+            style={{ padding: '4px 6px', fontSize: '0.75rem', height: '28px', width: '60px', backgroundColor: 'hsl(var(--bg-main))' }}
+          />
+          <input 
+            type={isNum ? "number" : isDate ? "date" : "text"} 
+            className="form-select" 
+            placeholder="max"
+            value={filter.value2 || ''}
+            onChange={(e) => handleUpdateFilter(idx, 'value2', e.target.value)}
+            style={{ padding: '4px 6px', fontSize: '0.75rem', height: '28px', width: '60px', backgroundColor: 'hsl(var(--bg-main))' }}
+          />
+        </div>
+      );
+    }
+
     return (
-      <div className="no-data-state">
-        <h3>No Table Selected</h3>
-        <p>Drop a dataset file and select a table in the sidebar to open the Visual Query Builder.</p>
-      </div>
+      <input 
+        type={isNum ? "number" : isDate ? "date" : "text"} 
+        className="form-select" 
+        placeholder={filter.operator === 'IN' ? "val1, val2..." : "value"}
+        value={filter.value}
+        onChange={(e) => handleUpdateFilter(idx, 'value', e.target.value)}
+        style={{ padding: '4px 6px', fontSize: '0.75rem', height: '28px', flex: 1.2, backgroundColor: 'hsl(var(--bg-main))' }}
+      />
     );
-  }
+  };
+
+  const otherTablesAvailable = tables.filter(t => t.name !== activeTable).length > 0;
 
   return (
     <div className="visual-builder-container">
@@ -158,10 +325,10 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
         {/* Dimensions checkboxes */}
         <div className="glass-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column' }}>
           <h4 style={{ fontSize: '0.85rem', marginBottom: '12px', borderBottom: '1px solid hsl(var(--border))', paddingBottom: '6px', fontFamily: 'Outfit' }}>
-            1. Dimensions / Columns
+            1. Fields / Columns
           </h4>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto', flex: 1 }}>
-            {columns.map(col => (
+            {availableColumns.map(col => (
               <label key={col.name} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', cursor: 'pointer' }}>
                 <input 
                   type="checkbox" 
@@ -212,7 +379,7 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
                     onChange={(e) => handleUpdateAggregate(idx, 'column', e.target.value)}
                     style={{ padding: '4px 6px', fontSize: '0.75rem', flex: 1.5, height: '28px' }}
                   >
-                    {columns.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                    {availableColumns.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
                   </select>
 
                   <button className="table-action-btn" onClick={() => handleRemoveAggregate(idx)} style={{ color: 'hsl(var(--error))', padding: '4px' }}>
@@ -224,10 +391,138 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
           </div>
         </div>
 
+        {/* Visual Joins */}
+        <div className="glass-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column' }}>
+          <h4 style={{ fontSize: '0.85rem', marginBottom: '12px', borderBottom: '1px solid hsl(var(--border))', paddingBottom: '6px', fontFamily: 'Outfit', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>3. Visual Joins</span>
+            <button 
+              className="table-action-btn" 
+              onClick={handleAddJoin} 
+              disabled={!otherTablesAvailable}
+              style={{ padding: '2px 6px', fontSize: '0.75rem', display: 'flex', gap: '4px', alignItems: 'center', opacity: otherTablesAvailable ? 1 : 0.4 }}
+              id="btn-builder-add-join"
+            >
+              <Plus size={12} />
+              <span>Add</span>
+            </button>
+          </h4>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '180px', overflowY: 'auto', flex: 1 }}>
+            {joins.length === 0 ? (
+              <div style={{ fontSize: '0.75rem', color: 'hsl(var(--text-dark))', textAlign: 'center', padding: '20px 0' }}>
+                {otherTablesAvailable ? "No joins configured." : "Load more datasets to enable Joins."}
+              </div>
+            ) : (
+              joins.map((join, idx) => {
+                const targetObj = tables.find(t => t.name === join.joinTable);
+                return (
+                  <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '8px', backgroundColor: 'rgba(255,255,255,0.01)', border: '1px solid hsl(var(--border))', borderRadius: '4px' }}>
+                    <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                      <select 
+                        className="form-select" 
+                        value={join.joinType}
+                        onChange={(e) => handleUpdateJoin(idx, 'joinType', e.target.value)}
+                        style={{ padding: '2px 4px', fontSize: '0.7rem', height: '24px', flex: 1 }}
+                      >
+                        <option value="INNER JOIN">INNER JOIN</option>
+                        <option value="LEFT JOIN">LEFT JOIN</option>
+                        <option value="RIGHT JOIN">RIGHT JOIN</option>
+                        <option value="FULL JOIN">FULL JOIN</option>
+                      </select>
+                      
+                      <select 
+                        className="form-select" 
+                        value={join.joinTable}
+                        onChange={(e) => handleUpdateJoin(idx, 'joinTable', e.target.value)}
+                        style={{ padding: '2px 4px', fontSize: '0.7rem', height: '24px', flex: 1 }}
+                      >
+                        {tables.filter(t => t.name !== activeTable).map(t => (
+                          <option key={t.name} value={t.name}>{t.name}</option>
+                        ))}
+                      </select>
+                      
+                      <button className="table-action-btn" onClick={() => handleRemoveJoin(idx)} style={{ color: 'hsl(var(--error))', padding: '2px' }}>
+                        <Trash2 size={10} />
+                      </button>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '4px', alignItems: 'center', marginTop: '2px', fontSize: '0.7rem' }}>
+                      <select 
+                        className="form-select" 
+                        value={join.activeKey}
+                        onChange={(e) => handleUpdateJoin(idx, 'activeKey', e.target.value)}
+                        style={{ padding: '2px 4px', fontSize: '0.65rem', height: '22px', flex: 1 }}
+                      >
+                        {columns.map(c => (
+                          <option key={c.name} value={`${activeTable}.${c.name}`}>{c.name}</option>
+                        ))}
+                      </select>
+                      <span>=</span>
+                      <select 
+                        className="form-select" 
+                        value={join.joinKey}
+                        onChange={(e) => handleUpdateJoin(idx, 'joinKey', e.target.value)}
+                        style={{ padding: '2px 4px', fontSize: '0.65rem', height: '22px', flex: 1 }}
+                      >
+                        {targetObj?.columns.map(c => (
+                          <option key={c.name} value={c.name}>{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Calculated Columns Setup */}
+        <div className="glass-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column' }}>
+          <h4 style={{ fontSize: '0.85rem', marginBottom: '12px', borderBottom: '1px solid hsl(var(--border))', paddingBottom: '6px', fontFamily: 'Outfit', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>4. Calculated Fields</span>
+            <button className="table-action-btn" onClick={handleAddCalcField} style={{ padding: '2px 6px', fontSize: '0.75rem', display: 'flex', gap: '4px', alignItems: 'center' }} id="btn-builder-add-calc">
+              <Plus size={12} />
+              <span>Add</span>
+            </button>
+          </h4>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto', flex: 1 }}>
+            {calcFields.length === 0 ? (
+              <div style={{ fontSize: '0.75rem', color: 'hsl(var(--text-dark))', textAlign: 'center', padding: '20px 0' }}>
+                No calculated fields.
+              </div>
+            ) : (
+              calcFields.map((calc, idx) => (
+                <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '8px', backgroundColor: 'rgba(255,255,255,0.01)', border: '1px solid hsl(var(--border))', borderRadius: '4px' }}>
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                    <input 
+                      type="text" 
+                      className="form-select" 
+                      placeholder="SQL Formula (e.g. price * 1.15)"
+                      value={calc.expression}
+                      onChange={(e) => handleUpdateCalcField(idx, 'expression', e.target.value)}
+                      style={{ padding: '2px 4px', fontSize: '0.7rem', height: '24px', flex: 1.5, backgroundColor: 'hsl(var(--bg-main))' }}
+                    />
+                    <input 
+                      type="text" 
+                      className="form-select" 
+                      placeholder="Alias"
+                      value={calc.alias}
+                      onChange={(e) => handleUpdateCalcField(idx, 'alias', e.target.value)}
+                      style={{ padding: '2px 4px', fontSize: '0.7rem', height: '24px', flex: 1, backgroundColor: 'hsl(var(--bg-main))' }}
+                    />
+                    <button className="table-action-btn" onClick={() => handleRemoveCalcField(idx)} style={{ color: 'hsl(var(--error))', padding: '2px' }}>
+                      <Trash2 size={10} />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
         {/* Filters Panel */}
         <div className="glass-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column' }}>
           <h4 style={{ fontSize: '0.85rem', marginBottom: '12px', borderBottom: '1px solid hsl(var(--border))', paddingBottom: '6px', fontFamily: 'Outfit', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>3. Filters (WHERE)</span>
+            <span>5. Filters (WHERE)</span>
             <button className="table-action-btn" onClick={handleAddFilter} style={{ padding: '2px 6px', fontSize: '0.75rem', display: 'flex', gap: '4px', alignItems: 'center' }} id="btn-builder-add-filter">
               <Plus size={12} />
               <span>Add</span>
@@ -247,7 +542,7 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
                     onChange={(e) => handleUpdateFilter(idx, 'column', e.target.value)}
                     style={{ padding: '4px 6px', fontSize: '0.75rem', flex: 1.2, height: '28px' }}
                   >
-                    {columns.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                    {availableColumns.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
                   </select>
                   
                   <select 
@@ -260,20 +555,13 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
                     <option value=">">&gt;</option>
                     <option value="<">&lt;</option>
                     <option value="LIKE">contains</option>
+                    <option value="IN">IN (list)</option>
+                    <option value="BETWEEN">BETWEEN</option>
                     <option value="IS NULL">is null</option>
                     <option value="IS NOT NULL">is not null</option>
                   </select>
 
-                  {!['IS NULL', 'IS NOT NULL'].includes(filter.operator) && (
-                    <input 
-                      type="text" 
-                      className="form-select" 
-                      placeholder="value"
-                      value={filter.value}
-                      onChange={(e) => handleUpdateFilter(idx, 'value', e.target.value)}
-                      style={{ padding: '4px 6px', fontSize: '0.75rem', flex: 1.2, height: '28px', backgroundColor: 'hsl(var(--bg-main))' }}
-                    />
-                  )}
+                  {renderFilterValueInput(filter, idx)}
 
                   <button className="table-action-btn" onClick={() => handleRemoveFilter(idx)} style={{ color: 'hsl(var(--error))', padding: '4px' }}>
                     <Trash2 size={12} />
@@ -284,32 +572,10 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
           </div>
         </div>
 
-        {/* Group By selector (only shown if metrics are active) */}
-        {aggregates.length > 0 && (
-          <div className="glass-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column' }}>
-            <h4 style={{ fontSize: '0.85rem', marginBottom: '12px', borderBottom: '1px solid hsl(var(--border))', paddingBottom: '6px', fontFamily: 'Outfit' }}>
-              4. Group By Fields
-            </h4>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto', flex: 1 }}>
-              {columns.map(col => (
-                <label key={col.name} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', cursor: 'pointer' }}>
-                  <input 
-                    type="checkbox" 
-                    checked={groupBy.includes(col.name)}
-                    onChange={() => handleToggleGroupBy(col.name)}
-                    style={{ accentColor: 'hsl(var(--accent))' }}
-                  />
-                  <span style={{ fontFamily: 'monospace' }}>{col.name}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Sort and Row limits */}
         <div className="glass-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column' }}>
           <h4 style={{ fontSize: '0.85rem', marginBottom: '12px', borderBottom: '1px solid hsl(var(--border))', paddingBottom: '6px', fontFamily: 'Outfit' }}>
-            {aggregates.length > 0 ? "5. Sort & Row Limits" : "4. Sort & Row Limits"}
+            6. Sort & Row Limits
           </h4>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', flex: 1, justifyContent: 'center' }}>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -321,7 +587,7 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
                 style={{ padding: '4px 6px', fontSize: '0.75rem', flex: 1.5, height: '28px' }}
               >
                 <option value="">-- None --</option>
-                {columns.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                {availableColumns.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
               </select>
               
               <select 

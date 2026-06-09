@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Database, Table, BarChart2, AlertCircle, FileCode2, Play, LayoutGrid } from 'lucide-react';
-import { initDuckDB, runQuery } from './lib/duckdb';
+import { Database, Table, BarChart2, AlertCircle, FileCode2, Play, LayoutGrid, Terminal, Sparkles } from 'lucide-react';
+import { initDuckDB, runQuery, getDB, getConn } from './lib/duckdb';
 import FileLoader from './components/FileLoader';
 import SchemaBrowser from './components/SchemaBrowser';
 import QueryEditor from './components/QueryEditor';
@@ -9,6 +9,9 @@ import ChartBuilder from './components/ChartBuilder';
 import VisualQueryBuilder from './components/VisualQueryBuilder';
 import DashboardCanvas from './components/DashboardCanvas';
 import SqlSnippets from './components/SqlSnippets';
+import PivotBuilder from './components/PivotBuilder';
+import NlqAssistant from './components/NlqAssistant';
+import DbTerminal from './components/DbTerminal';
 
 function App() {
   const [dbReady, setDbReady] = useState(false);
@@ -20,7 +23,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('data');
   
   // Advanced BI Expansion States
-  const [workspaceMode, setWorkspaceMode] = useState('sql'); // sql, builder, dashboard
+  const [workspaceMode, setWorkspaceMode] = useState('sql'); // sql, builder, pivot, nlq, terminal, dashboard
   const [dashboardCards, setDashboardCards] = useState([]);
   const [showSnippets, setShowSnippets] = useState(false);
   const [toast, setToast] = useState({ message: '', type: '' });
@@ -118,6 +121,9 @@ function App() {
       chartType: cardConfig.chartType,
       xAxis: cardConfig.xAxis,
       yAxis: cardConfig.yAxis,
+      yAxis2: cardConfig.yAxis2,
+      enableTrendline: cardConfig.enableTrendline,
+      stackMode: cardConfig.stackMode,
       colorTheme: cardConfig.colorTheme,
       rows: result.rows,
       sql: result.sql || query
@@ -135,6 +141,10 @@ function App() {
     setDashboardCards(prev => prev.map(c => c.id === cardId ? { ...c, title: newTitle } : c));
   }, []);
 
+  const handleReorderDashboardCards = useCallback((newCards) => {
+    setDashboardCards(newCards);
+  }, []);
+
   // Inject analytical SQL template and switch to console view
   const handleInjectSnippet = useCallback((sqlString) => {
     setQuery(sqlString);
@@ -142,7 +152,93 @@ function App() {
     handleRunQuery(sqlString);
   }, [handleRunQuery]);
 
-  // Find the active table details for snippets
+  // Save the entire active workspace (tables schemas, tables contents, and widgets) as a JSON file
+  const handleSaveWorkspace = async () => {
+    setIsRunning(true);
+    try {
+      const savedTables = [];
+      for (const table of tables) {
+        const queryRes = await runQuery(`SELECT * FROM ${table.name}`);
+        if (queryRes.success) {
+          savedTables.push({
+            name: table.name,
+            columns: table.columns,
+            rows: queryRes.rows
+          });
+        }
+      }
+
+      const workspaceData = {
+        version: "1.0.0",
+        cards: dashboardCards,
+        tables: savedTables
+      };
+
+      const jsonString = JSON.stringify(workspaceData, null, 2);
+      const blob = new Blob([jsonString], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `zerocloud_bi_workspace_${Date.now()}.json`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showNotification("Workspace saved successfully!", "success");
+    } catch (err) {
+      showNotification("Failed to save workspace: " + err.message, "error");
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
+  // Restore workspace JSON, register tables in DuckDB and load visual widgets
+  const handleLoadWorkspace = async (file) => {
+    setIsRunning(true);
+    try {
+      const text = await file.text();
+      const workspaceData = JSON.parse(text);
+
+      if (!workspaceData.tables || !workspaceData.cards) {
+        throw new Error("Invalid workspace structure.");
+      }
+
+      const database = await getDB();
+      const conn = await getConn();
+
+      const restoredTables = [];
+      for (const table of workspaceData.tables) {
+        const jsonStr = JSON.stringify(table.rows);
+        const encoder = new TextEncoder();
+        const buffer = encoder.encode(jsonStr);
+        const virtualFile = `${table.name}_restored.json`;
+
+        await database.registerFileBuffer(virtualFile, buffer);
+        await conn.query(`CREATE OR REPLACE TABLE ${table.name} AS SELECT * FROM read_json_auto('${virtualFile}')`);
+        
+        restoredTables.push({
+          name: table.name,
+          fileName: virtualFile,
+          columns: table.columns
+        });
+      }
+
+      setTables(restoredTables);
+      setDashboardCards(workspaceData.cards);
+
+      if (restoredTables.length > 0) {
+        const lastTable = restoredTables[restoredTables.length - 1];
+        setQuery(`SELECT * FROM ${lastTable.name} LIMIT 50;`);
+      }
+
+      showNotification("Workspace restored successfully!", "success");
+    } catch (err) {
+      showNotification("Failed to load workspace: " + err.message, "error");
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
+  // Find the active table details for snippets and other configurations
   const activeTableObj = tables.length > 0 ? tables[tables.length - 1] : null;
 
   return (
@@ -190,8 +286,8 @@ function App() {
         </header>
 
         {/* Navigation Mode Sub-Header */}
-        <div className="workspace-mode-bar no-print">
-          <div style={{ display: 'flex', gap: '8px' }}>
+        <div className="workspace-mode-bar no-print" style={{ overflowX: 'auto', gap: '10px' }}>
+          <div style={{ display: 'flex', gap: '6px' }}>
             <button 
               className={`mode-btn ${workspaceMode === 'sql' ? 'active' : ''}`}
               onClick={() => setWorkspaceMode('sql')}
@@ -205,6 +301,26 @@ function App() {
               Visual Builder
             </button>
             <button 
+              className={`mode-btn ${workspaceMode === 'pivot' ? 'active' : ''}`}
+              onClick={() => setWorkspaceMode('pivot')}
+            >
+              Pivot Grid
+            </button>
+            <button 
+              className={`mode-btn ${workspaceMode === 'nlq' ? 'active' : ''}`}
+              onClick={() => setWorkspaceMode('nlq')}
+            >
+              <Sparkles size={11} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+              NLQ Assistant
+            </button>
+            <button 
+              className={`mode-btn ${workspaceMode === 'terminal' ? 'active' : ''}`}
+              onClick={() => setWorkspaceMode('terminal')}
+            >
+              <Terminal size={11} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+              CLI Terminal
+            </button>
+            <button 
               className={`mode-btn ${workspaceMode === 'dashboard' ? 'active' : ''}`}
               onClick={() => setWorkspaceMode('dashboard')}
             >
@@ -216,7 +332,7 @@ function App() {
             <button 
               className={`btn-outline ${showSnippets ? 'active' : ''}`}
               onClick={() => setShowSnippets(!showSnippets)}
-              style={{ height: '30px', fontSize: '0.8rem', padding: '0 10px' }}
+              style={{ height: '30px', fontSize: '0.8rem', padding: '0 10px', flexShrink: 0 }}
               id="btn-toggle-snippets"
             >
               <FileCode2 size={12} />
@@ -234,6 +350,27 @@ function App() {
                 cards={dashboardCards} 
                 onRemoveCard={handleRemoveDashboardCard} 
                 onRenameCard={handleRenameDashboardCard} 
+                onReorderCards={handleReorderDashboardCards}
+                tables={tables}
+                dbReady={dbReady}
+                onSaveWorkspace={handleSaveWorkspace}
+                onLoadWorkspace={handleLoadWorkspace}
+              />
+            ) : workspaceMode === 'pivot' ? (
+              <PivotBuilder 
+                activeTable={activeTableObj?.name}
+                columns={activeTableObj?.columns || []}
+              />
+            ) : workspaceMode === 'nlq' ? (
+              <NlqAssistant 
+                activeTable={activeTableObj?.name}
+                columns={activeTableObj?.columns || []}
+                onRunQuery={handleInjectSnippet}
+              />
+            ) : workspaceMode === 'terminal' ? (
+              <DbTerminal 
+                activeTable={activeTableObj?.name}
+                tables={tables}
               />
             ) : (
               <>
@@ -245,11 +382,14 @@ function App() {
                     onRunQuery={handleRunQuery} 
                     isRunning={isRunning} 
                     lastExecutionResult={result} 
+                    activeTable={activeTableObj?.name}
+                    columns={activeTableObj?.columns || []}
                   />
                 ) : (
                   <VisualQueryBuilder 
                     activeTable={activeTableObj?.name}
                     columns={activeTableObj?.columns || []}
+                    tables={tables}
                     onRunQuery={handleRunQuery}
                     isRunning={isRunning}
                   />

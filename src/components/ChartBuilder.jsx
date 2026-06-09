@@ -3,15 +3,21 @@ import { ResponsiveContainer, BarChart, Bar, LineChart, Line, AreaChart, Area, P
 import { BarChart2, TrendingUp, PieChart as PieIcon, AreaChart as AreaIcon, HelpCircle } from 'lucide-react';
 
 const ChartBuilder = memo(function ChartBuilder({ result, onPinCard }) {
-  const [chartType, setChartType] = useState('bar'); // bar, line, area, pie
+  const [chartType, setChartType] = useState('bar');
   const [xAxis, setXAxis] = useState('');
   const [yAxis, setYAxis] = useState('');
-  const [colorTheme, setColorTheme] = useState('violet'); // violet, cyan, green
+  const [yAxis2, setYAxis2] = useState(''); // Secondary Y axis
+  const [enableDualAxis, setEnableDualAxis] = useState(false);
+  const [enableTrendline, setEnableTrendline] = useState(false);
+  const [stackMode, setStackMode] = useState(false);
+  const [colorTheme, setColorTheme] = useState('violet');
 
   const themeColors = {
     violet: { primary: '#8b5cf6', secondary: '#a78bfa', accent: '#7c3aed' },
     cyan: { primary: '#06b6d4', secondary: '#67e8f9', accent: '#0891b2' },
     green: { primary: '#10b981', secondary: '#6ee7b7', accent: '#059669' },
+    rose: { primary: '#f43f5e', secondary: '#fda4af', accent: '#e11d48' },
+    amber: { primary: '#f59e0b', secondary: '#fcd34d', accent: '#d97706' },
   };
 
   const colors = [
@@ -22,7 +28,7 @@ const ChartBuilder = memo(function ChartBuilder({ result, onPinCard }) {
   const columns = result?.columns || [];
   const rows = result?.rows || [];
 
-  // Automatically select default X and Y columns when query results change
+  // Auto-guess columns on load
   useEffect(() => {
     if (columns.length > 0) {
       setXAxis(columns[0]);
@@ -33,12 +39,100 @@ const ChartBuilder = memo(function ChartBuilder({ result, onPinCard }) {
         const testVal = rows[0]?.[col];
         return typeof testVal === 'number';
       });
-      setYAxis(numericCol || columns[Math.min(1, columns.length - 1)]);
+      
+      const primaryY = numericCol || columns[Math.min(1, columns.length - 1)];
+      setYAxis(primaryY);
+
+      // Guess secondary Y axis
+      const secondaryY = columns.find(col => col !== columns[0] && col !== primaryY && typeof rows[0]?.[col] === 'number');
+      setYAxis2(secondaryY || '');
     } else {
       setXAxis('');
       setYAxis('');
+      setYAxis2('');
     }
   }, [result]);
+
+  const activeTheme = themeColors[colorTheme] || themeColors.violet;
+
+  // Calculate Linear Regression Trendline client-side (memoized)
+  const regressionStats = useMemo(() => {
+    if (!enableTrendline || !xAxis || !yAxis || rows.length < 2) return null;
+
+    const n = rows.length;
+    let sumX = 0;
+    let sumY = 0;
+    let sumXY = 0;
+    let sumXX = 0;
+
+    const parsedData = rows.map((row, idx) => {
+      // If X axis is not a number, map it to indices for regression calculations
+      const xVal = typeof row[xAxis] === 'number' ? row[xAxis] : idx;
+      const yVal = Number(row[yAxis]) || 0;
+      return { x: xVal, y: yVal };
+    });
+
+    parsedData.forEach(d => {
+      sumX += d.x;
+      sumY += d.y;
+      sumXY += d.x * d.y;
+      sumXX += d.x * d.x;
+    });
+
+    const meanX = sumX / n;
+    const meanY = sumY / n;
+
+    // Calculate Slope (m) and Intercept (c)
+    const numerator = sumXY - (n * meanX * meanY);
+    const denominator = sumXX - (n * meanX * meanX);
+    
+    if (denominator === 0) return null;
+    
+    const slope = numerator / denominator;
+    const intercept = meanY - (slope * meanX);
+
+    // Compute R-squared coefficient
+    let totalVar = 0;
+    let residVar = 0;
+    parsedData.forEach(d => {
+      const predY = (slope * d.x) + intercept;
+      totalVar += Math.pow(d.y - meanY, 2);
+      residVar += Math.pow(d.y - predY, 2);
+    });
+
+    const rSquared = totalVar === 0 ? 0 : 1 - (residVar / totalVar);
+
+    return {
+      slope,
+      intercept,
+      rSquared,
+      equation: `y = ${slope.toFixed(2)}x + ${intercept.toFixed(1)}`,
+      r2String: `R² = ${rSquared.toFixed(3)}`
+    };
+  }, [rows, xAxis, yAxis, enableTrendline]);
+
+  // Pre-process chart data ensuring Y-axis values are parsed as numbers, adding trendline columns
+  const chartData = useMemo(() => {
+    return rows.map((row, idx) => {
+      const d = { ...row };
+      if (yAxis && d[yAxis] !== undefined) {
+        const val = Number(d[yAxis]);
+        d[yAxis] = isNaN(val) ? 0 : val;
+      }
+      if (yAxis2 && d[yAxis2] !== undefined) {
+        const val = Number(d[yAxis2]);
+        d[yAxis2] = isNaN(val) ? 0 : val;
+      }
+
+      // Append trendline value
+      if (regressionStats) {
+        const xVal = typeof row[xAxis] === 'number' ? row[xAxis] : idx;
+        d.trendline = Number(((regressionStats.slope * xVal) + regressionStats.intercept).toFixed(2));
+      }
+      
+      return d;
+    });
+  }, [rows, xAxis, yAxis, yAxis2, regressionStats]);
 
   if (!result || !result.success) {
     return (
@@ -59,26 +153,12 @@ const ChartBuilder = memo(function ChartBuilder({ result, onPinCard }) {
     );
   }
 
-  // Pre-process chart data ensuring Y-axis values are parsed as numbers (memoized)
-  const chartData = useMemo(() => {
-    return rows.map(row => {
-      const d = { ...row };
-      if (yAxis && d[yAxis] !== undefined) {
-        const val = Number(d[yAxis]);
-        d[yAxis] = isNaN(val) ? 0 : val;
-      }
-      return d;
-    });
-  }, [rows, yAxis]);
-
-  const activeTheme = themeColors[colorTheme];
-
   const renderChart = () => {
     if (!xAxis || !yAxis) return null;
 
     const commonProps = {
       data: chartData,
-      margin: { top: 10, right: 30, left: 10, bottom: 20 },
+      margin: { top: 15, right: 30, left: 10, bottom: 20 },
     };
 
     switch (chartType) {
@@ -87,13 +167,16 @@ const ChartBuilder = memo(function ChartBuilder({ result, onPinCard }) {
           <LineChart {...commonProps}>
             <CartesianGrid strokeDasharray="3 3" stroke="hsla(224, 15%, 18%, 0.5)" />
             <XAxis dataKey={xAxis} stroke="hsl(var(--text-muted))" fontSize={11} tickLine={false} />
-            <YAxis stroke="hsl(var(--text-muted))" fontSize={11} tickLine={false} />
+            <YAxis yAxisId="left" stroke="hsl(var(--text-muted))" fontSize={11} tickLine={false} />
+            {enableDualAxis && yAxis2 && <YAxis yAxisId="right" orientation="right" stroke="hsl(var(--accent-secondary))" fontSize={11} tickLine={false} />}
             <Tooltip 
               contentStyle={{ backgroundColor: 'hsl(var(--bg-card))', border: '1px solid hsl(var(--border))', borderRadius: '6px' }}
               labelStyle={{ fontWeight: 600, color: 'hsl(var(--text-main))' }}
             />
             <Legend verticalAlign="top" height={36} />
-            <Line type="monotone" dataKey={yAxis} stroke={activeTheme.primary} strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+            <Line yAxisId="left" type="monotone" dataKey={yAxis} stroke={activeTheme.primary} strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} name={yAxis} />
+            {enableDualAxis && yAxis2 && <Line yAxisId="right" type="monotone" dataKey={yAxis2} stroke="#06b6d4" strokeWidth={2} dot={{ r: 4 }} name={yAxis2} />}
+            {enableTrendline && <Line yAxisId="left" type="monotone" dataKey="trendline" stroke="#ef4444" strokeWidth={1.5} strokeDasharray="5 5" dot={false} activeDot={false} name="Trendline" />}
           </LineChart>
         );
       case 'area':
@@ -113,7 +196,8 @@ const ChartBuilder = memo(function ChartBuilder({ result, onPinCard }) {
               labelStyle={{ fontWeight: 600, color: 'hsl(var(--text-main))' }}
             />
             <Legend verticalAlign="top" height={36} />
-            <Area type="monotone" dataKey={yAxis} stroke={activeTheme.primary} strokeWidth={2} fillOpacity={1} fill="url(#colorArea)" />
+            <Area type="monotone" dataKey={yAxis} stroke={activeTheme.primary} strokeWidth={2} fillOpacity={1} fill="url(#colorArea)" stackId={stackMode ? "1" : undefined} />
+            {enableTrendline && <Line type="monotone" dataKey="trendline" stroke="#ef4444" strokeWidth={1.5} strokeDasharray="5 5" dot={false} activeDot={false} name="Trendline" />}
           </AreaChart>
         );
       case 'pie':
@@ -148,13 +232,16 @@ const ChartBuilder = memo(function ChartBuilder({ result, onPinCard }) {
           <BarChart {...commonProps}>
             <CartesianGrid strokeDasharray="3 3" stroke="hsla(224, 15%, 18%, 0.5)" />
             <XAxis dataKey={xAxis} stroke="hsl(var(--text-muted))" fontSize={11} tickLine={false} />
-            <YAxis stroke="hsl(var(--text-muted))" fontSize={11} tickLine={false} />
+            <YAxis yAxisId="left" stroke="hsl(var(--text-muted))" fontSize={11} tickLine={false} />
+            {enableDualAxis && yAxis2 && <YAxis yAxisId="right" orientation="right" stroke="hsl(var(--accent-secondary))" fontSize={11} tickLine={false} />}
             <Tooltip 
               contentStyle={{ backgroundColor: 'hsl(var(--bg-card))', border: '1px solid hsl(var(--border))', borderRadius: '6px' }}
               labelStyle={{ fontWeight: 600, color: 'hsl(var(--text-main))' }}
             />
             <Legend verticalAlign="top" height={36} />
-            <Bar dataKey={yAxis} fill={activeTheme.primary} radius={[4, 4, 0, 0]} maxBarSize={60} />
+            <Bar yAxisId="left" dataKey={yAxis} fill={activeTheme.primary} radius={stackMode ? undefined : [4, 4, 0, 0]} maxBarSize={60} stackId={stackMode ? "1" : undefined} name={yAxis} />
+            {enableDualAxis && yAxis2 && <Bar yAxisId="right" dataKey={yAxis2} fill="#06b6d4" radius={stackMode ? undefined : [4, 4, 0, 0]} maxBarSize={60} stackId={stackMode ? "1" : undefined} name={yAxis2} />}
+            {enableTrendline && <Line yAxisId="left" type="monotone" dataKey="trendline" stroke="#ef4444" strokeWidth={1.5} strokeDasharray="5 5" dot={false} activeDot={false} name="Trendline" />}
           </BarChart>
         );
     }
@@ -189,6 +276,62 @@ const ChartBuilder = memo(function ChartBuilder({ result, onPinCard }) {
           </select>
         </div>
 
+        {/* Dual Axis Toggle */}
+        {['bar', 'line'].includes(chartType) && (
+          <div className="form-group">
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+              <input 
+                type="checkbox"
+                checked={enableDualAxis}
+                onChange={(e) => setEnableDualAxis(e.target.checked)}
+                style={{ accentColor: 'hsl(var(--accent))' }}
+              />
+              <span>Dual Y-Axis</span>
+            </label>
+            {enableDualAxis && (
+              <select
+                className="form-select"
+                value={yAxis2}
+                onChange={(e) => setYAxis2(e.target.value)}
+                style={{ marginTop: '4px' }}
+              >
+                <option value="">-- Select Axis 2 --</option>
+                {columns.filter(c => c !== xAxis).map(col => <option key={col} value={col}>{col}</option>)}
+              </select>
+            )}
+          </div>
+        )}
+
+        {/* Trendline Toggle */}
+        {['bar', 'line', 'area'].includes(chartType) && (
+          <div className="form-group">
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+              <input 
+                type="checkbox"
+                checked={enableTrendline}
+                onChange={(e) => setEnableTrendline(e.target.checked)}
+                style={{ accentColor: 'hsl(var(--accent))' }}
+              />
+              <span>Show Trendline</span>
+            </label>
+          </div>
+        )}
+
+        {/* Stack Mode Toggle */}
+        {['bar', 'area'].includes(chartType) && (
+          <div className="form-group">
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+              <input 
+                type="checkbox"
+                checked={stackMode}
+                onChange={(e) => setStackMode(e.target.checked)}
+                style={{ accentColor: 'hsl(var(--accent))' }}
+              />
+              <span>Stacked Layout</span>
+            </label>
+          </div>
+        )}
+
         <div className="form-group">
           <label>Color Theme</label>
           <select 
@@ -200,6 +343,8 @@ const ChartBuilder = memo(function ChartBuilder({ result, onPinCard }) {
             <option value="violet">Violet Theme</option>
             <option value="cyan">Cyan Theme</option>
             <option value="green">Green Theme</option>
+            <option value="rose">Rose Theme</option>
+            <option value="amber">Amber Theme</option>
           </select>
         </div>
 
@@ -251,6 +396,9 @@ const ChartBuilder = memo(function ChartBuilder({ result, onPinCard }) {
                   chartType,
                   xAxis,
                   yAxis,
+                  yAxis2: enableDualAxis ? yAxis2 : undefined,
+                  enableTrendline,
+                  stackMode,
                   colorTheme,
                   title: `${chartType.charAt(0).toUpperCase() + chartType.slice(1)} of ${yAxis} by ${xAxis}`
                 });
@@ -264,7 +412,29 @@ const ChartBuilder = memo(function ChartBuilder({ result, onPinCard }) {
       </div>
 
       <div className="chart-display-panel">
-        <div style={{ width: '100%', height: '100%', minHeight: '300px' }}>
+        <div style={{ width: '100%', height: '100%', minHeight: '300px', position: 'relative' }}>
+          {regressionStats && (
+            <div style={{
+              position: 'absolute',
+              top: '10px',
+              right: '30px',
+              backgroundColor: 'hsla(var(--bg-card), 0.85)',
+              border: '1px solid hsl(var(--border))',
+              borderRadius: '4px',
+              padding: '6px 10px',
+              fontSize: '0.7rem',
+              fontFamily: 'monospace',
+              color: 'hsl(var(--text-muted))',
+              zIndex: 10,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '2px'
+            }}>
+              <span style={{ color: '#ef4444', fontWeight: 600 }}>Regression Model</span>
+              <span>{regressionStats.equation}</span>
+              <span>{regressionStats.r2String}</span>
+            </div>
+          )}
           <ResponsiveContainer width="100%" height="90%">
             {renderChart()}
           </ResponsiveContainer>
