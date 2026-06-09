@@ -1,4 +1,4 @@
-# ZeroCloud BI: Serverless Client-Side SQL Analytics
+# ZeroCloud BI : Serverless Client-Side SQL Analytics
 
 DuckBoard is a fully offline-first, high-performance Business Intelligence (BI) and SQL analytics workspace that runs 100% in your browser. Powered by **DuckDB-Wasm**, it allows you to ingest large datasets (CSV, TSV, Parquet) and perform complex relational queries (aggregations, joins, filters) with instant visual reporting—all without transferring a single byte of data to a backend server.
 
