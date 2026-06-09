@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Database, Table, BarChart2, AlertCircle } from 'lucide-react';
+import { Database, Table, BarChart2, AlertCircle, FileCode2, Play, LayoutGrid } from 'lucide-react';
 import { initDuckDB, runQuery } from './lib/duckdb';
 import FileLoader from './components/FileLoader';
 import SchemaBrowser from './components/SchemaBrowser';
 import QueryEditor from './components/QueryEditor';
 import ResultsGrid from './components/ResultsGrid';
 import ChartBuilder from './components/ChartBuilder';
+import VisualQueryBuilder from './components/VisualQueryBuilder';
+import DashboardCanvas from './components/DashboardCanvas';
+import SqlSnippets from './components/SqlSnippets';
 
 function App() {
   const [dbReady, setDbReady] = useState(false);
@@ -15,6 +18,19 @@ function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState(null);
   const [activeTab, setActiveTab] = useState('data');
+  
+  // Advanced BI Expansion States
+  const [workspaceMode, setWorkspaceMode] = useState('sql'); // sql, builder, dashboard
+  const [dashboardCards, setDashboardCards] = useState([]);
+  const [showSnippets, setShowSnippets] = useState(false);
+  const [toast, setToast] = useState({ message: '', type: '' });
+
+  const showNotification = useCallback((message, type = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => {
+      setToast(prev => prev.message === message ? { message: '', type: '' } : prev);
+    }, 3000);
+  }, []);
 
   // Initialize DuckDB-Wasm once on component load
   useEffect(() => {
@@ -28,6 +44,7 @@ function App() {
       });
   }, []);
 
+  // Run a SQL query in the background worker thread
   const handleRunQuery = useCallback(async (sqlString) => {
     if (!sqlString.trim()) return;
     
@@ -36,6 +53,8 @@ function App() {
     
     try {
       const queryResult = await runQuery(sqlString);
+      // Attach the query string to the result object for down-stream dashboard cards
+      queryResult.sql = sqlString;
       setResult(queryResult);
       
       // If user manually ran a DROP TABLE command, sync the schema browser
@@ -59,16 +78,12 @@ function App() {
 
   const handleTableLoaded = useCallback((newTable) => {
     setTables(prev => {
-      // Replace existing table if same name loaded again
       const filtered = prev.filter(t => t.name !== newTable.name);
       return [...filtered, newTable];
     });
     
-    // Autofill query workspace with default selection
     const initialQuery = `SELECT * FROM ${newTable.name} LIMIT 50;`;
     setQuery(initialQuery);
-    
-    // Execute query automatically to preview details
     handleRunQuery(initialQuery);
   }, [handleRunQuery]);
 
@@ -93,13 +108,50 @@ function App() {
     }
   }, []);
 
+  // Dashboard Card Pinning callback
+  const handlePinCard = useCallback((cardConfig) => {
+    if (!result || !result.success) return;
+
+    const newCard = {
+      id: Date.now(),
+      title: cardConfig.title,
+      chartType: cardConfig.chartType,
+      xAxis: cardConfig.xAxis,
+      yAxis: cardConfig.yAxis,
+      colorTheme: cardConfig.colorTheme,
+      rows: result.rows,
+      sql: result.sql || query
+    };
+
+    setDashboardCards(prev => [...prev, newCard]);
+    showNotification(`Pinned "${cardConfig.title}" to your Dashboard Report!`, 'success');
+  }, [result, query, showNotification]);
+
+  const handleRemoveDashboardCard = useCallback((cardId) => {
+    setDashboardCards(prev => prev.filter(c => c.id !== cardId));
+  }, []);
+
+  const handleRenameDashboardCard = useCallback((cardId, newTitle) => {
+    setDashboardCards(prev => prev.map(c => c.id === cardId ? { ...c, title: newTitle } : c));
+  }, []);
+
+  // Inject analytical SQL template and switch to console view
+  const handleInjectSnippet = useCallback((sqlString) => {
+    setQuery(sqlString);
+    setWorkspaceMode('sql');
+    handleRunQuery(sqlString);
+  }, [handleRunQuery]);
+
+  // Find the active table details for snippets
+  const activeTableObj = tables.length > 0 ? tables[tables.length - 1] : null;
+
   return (
     <div className="app-container">
-      {/* Sidebar controls */}
-      <aside className="sidebar">
+      {/* Sidebar Controls */}
+      <aside className="sidebar no-print">
         <div className="sidebar-header">
           <h1>
-            Local BI Analyzer
+            ZeroCloud BI
             <span>DuckDB SQL Engine</span>
           </h1>
         </div>
@@ -122,12 +174,13 @@ function App() {
         </div>
       </aside>
 
-      {/* Primary database view */}
+      {/* Main Analysis Workspace */}
       <main className="workspace">
-        <header className="workspace-header">
+        {/* Workspace Title bar */}
+        <header className="workspace-header no-print">
           <h2>
             <Database size={18} style={{ color: 'hsl(var(--accent-secondary))' }} />
-            <span>SQL Analytics Workspace</span>
+            <span>Serverless Analytical Database</span>
           </h2>
           
           <div className="db-status">
@@ -136,47 +189,121 @@ function App() {
           </div>
         </header>
 
-        <div className="workspace-content">
-          {/* Query Editor component */}
-          <QueryEditor 
-            query={query} 
-            setQuery={setQuery} 
-            onRunQuery={handleRunQuery} 
-            isRunning={isRunning} 
-            lastExecutionResult={result} 
-          />
+        {/* Navigation Mode Sub-Header */}
+        <div className="workspace-mode-bar no-print">
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button 
+              className={`mode-btn ${workspaceMode === 'sql' ? 'active' : ''}`}
+              onClick={() => setWorkspaceMode('sql')}
+            >
+              SQL Console
+            </button>
+            <button 
+              className={`mode-btn ${workspaceMode === 'builder' ? 'active' : ''}`}
+              onClick={() => setWorkspaceMode('builder')}
+            >
+              Visual Builder
+            </button>
+            <button 
+              className={`mode-btn ${workspaceMode === 'dashboard' ? 'active' : ''}`}
+              onClick={() => setWorkspaceMode('dashboard')}
+            >
+              DashboardCanvas ({dashboardCards.length})
+            </button>
+          </div>
 
-          {/* Results grid / Chart viewports */}
-          <div className="glass-panel tabs-container">
-            <div className="tabs-header">
-              <div className="tabs">
-                <button 
-                  className={`tab ${activeTab === 'data' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('data')}
-                  id="tab-data"
-                >
-                  <Table size={14} />
-                  <span>Data Table</span>
-                </button>
-                <button 
-                  className={`tab ${activeTab === 'chart' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('chart')}
-                  id="tab-chart"
-                >
-                  <BarChart2 size={14} />
-                  <span>Visualizations</span>
-                </button>
-              </div>
-            </div>
+          {activeTableObj && (
+            <button 
+              className={`btn-outline ${showSnippets ? 'active' : ''}`}
+              onClick={() => setShowSnippets(!showSnippets)}
+              style={{ height: '30px', fontSize: '0.8rem', padding: '0 10px' }}
+              id="btn-toggle-snippets"
+            >
+              <FileCode2 size={12} />
+              <span>SQL Templates</span>
+            </button>
+          )}
+        </div>
 
-            {activeTab === 'data' ? (
-              <ResultsGrid result={result} />
+        {/* Workspace views split pane */}
+        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+          <div className="workspace-content" style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+            
+            {workspaceMode === 'dashboard' ? (
+              <DashboardCanvas 
+                cards={dashboardCards} 
+                onRemoveCard={handleRemoveDashboardCard} 
+                onRenameCard={handleRenameDashboardCard} 
+              />
             ) : (
-              <ChartBuilder result={result} />
+              <>
+                {/* Switch top pane based on mode */}
+                {workspaceMode === 'sql' ? (
+                  <QueryEditor 
+                    query={query} 
+                    setQuery={setQuery} 
+                    onRunQuery={handleRunQuery} 
+                    isRunning={isRunning} 
+                    lastExecutionResult={result} 
+                  />
+                ) : (
+                  <VisualQueryBuilder 
+                    activeTable={activeTableObj?.name}
+                    columns={activeTableObj?.columns || []}
+                    onRunQuery={handleRunQuery}
+                    isRunning={isRunning}
+                  />
+                )}
+
+                {/* Results grid / single Chart workspace at the bottom */}
+                <div className="glass-panel tabs-container">
+                  <div className="tabs-header no-print">
+                    <div className="tabs">
+                      <button 
+                        className={`tab ${activeTab === 'data' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('data')}
+                        id="tab-data"
+                      >
+                        <Table size={14} />
+                        <span>Data Table</span>
+                      </button>
+                      <button 
+                        className={`tab ${activeTab === 'chart' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('chart')}
+                        id="tab-chart"
+                      >
+                        <BarChart2 size={14} />
+                        <span>Visualizations</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {activeTab === 'data' ? (
+                    <ResultsGrid result={result} />
+                  ) : (
+                    <ChartBuilder result={result} onPinCard={handlePinCard} />
+                  )}
+                </div>
+              </>
             )}
           </div>
+
+          {/* Right-floating Slide-out Templates reference drawer */}
+          {showSnippets && activeTableObj && (
+            <SqlSnippets 
+              activeTable={activeTableObj.name}
+              columns={activeTableObj.columns}
+              onInjectQuery={handleInjectSnippet}
+              onClose={() => setShowSnippets(false)}
+            />
+          )}
         </div>
       </main>
+      {toast.message && (
+        <div className={`toast-notification ${toast.type} no-print`} id="toast-notify">
+          <span>{toast.message}</span>
+        </div>
+      )}
     </div>
   );
 }

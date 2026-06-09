@@ -84,6 +84,14 @@ export function arrowTableToJSON(table) {
   return { columns, rows };
 }
 
+// Get or reuse a single connection instance
+export async function getConn() {
+  if (connection) return connection;
+  const database = await getDB();
+  connection = await database.connect();
+  return connection;
+}
+
 // Register a file buffer (CSV/TSV/Parquet) as a DuckDB table
 export async function registerFile(file, tableName) {
   const database = await getDB();
@@ -94,7 +102,7 @@ export async function registerFile(file, tableName) {
   
   await database.registerFileBuffer(file.name, buffer);
   
-  const conn = await database.connect();
+  const conn = await getConn();
   
   const nameLower = file.name.toLowerCase();
   const isParquet = nameLower.endsWith('.parquet');
@@ -121,18 +129,15 @@ export async function registerFile(file, tableName) {
       nullable: r.null === 'YES'
     }));
     
-    await conn.close();
     return columns;
   } catch (err) {
-    await conn.close();
     throw err;
   }
 }
 
 // Execute a SQL query and return performance metrics
 export async function runQuery(sql) {
-  const database = await getDB();
-  const conn = await database.connect();
+  const conn = await getConn();
   const startTime = performance.now();
   
   try {
@@ -140,7 +145,6 @@ export async function runQuery(sql) {
     const executionTimeMs = performance.now() - startTime;
     const { columns, rows } = arrowTableToJSON(table);
     
-    await conn.close();
     return {
       success: true,
       columns,
@@ -148,7 +152,6 @@ export async function runQuery(sql) {
       executionTimeMs: Math.round(executionTimeMs)
     };
   } catch (error) {
-    await conn.close();
     return {
       success: false,
       error: error.message,

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, memo } from 'react';
 import { ResponsiveContainer, BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { BarChart2, TrendingUp, PieChart as PieIcon, AreaChart as AreaIcon, HelpCircle } from 'lucide-react';
 
-const ChartBuilder = memo(function ChartBuilder({ result }) {
+const ChartBuilder = memo(function ChartBuilder({ result, onPinCard }) {
   const [chartType, setChartType] = useState('bar'); // bar, line, area, pie
   const [xAxis, setXAxis] = useState('');
   const [yAxis, setYAxis] = useState('');
@@ -239,6 +239,27 @@ const ChartBuilder = memo(function ChartBuilder({ result }) {
               <span>Pie</span>
             </button>
           </div>
+        </div>
+
+        <div className="form-group" style={{ marginTop: '18px' }}>
+          <button 
+            className="btn-run" 
+            style={{ width: '100%', justifyContent: 'center', height: '34px', background: 'linear-gradient(135deg, hsl(var(--accent-secondary)), #0891b2)', boxShadow: 'none' }}
+            onClick={() => {
+              if (onPinCard && xAxis && yAxis) {
+                onPinCard({
+                  chartType,
+                  xAxis,
+                  yAxis,
+                  colorTheme,
+                  title: `${chartType.charAt(0).toUpperCase() + chartType.slice(1)} of ${yAxis} by ${xAxis}`
+                });
+              }
+            }}
+            id="btn-pin-to-dashboard"
+          >
+            <span>Pin to Dashboard</span>
+          </button>
         </div>
       </div>
 
