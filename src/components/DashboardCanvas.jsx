@@ -1,4 +1,4 @@
-import React, { useState, memo } from 'react';
+import React, { useState, useMemo, useRef, memo } from 'react';
 import { ResponsiveContainer, BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { Trash2, Code, Printer, LayoutGrid, Download, MoveLeft, MoveRight, HardDriveDownload, HardDriveUpload } from 'lucide-react';
 
