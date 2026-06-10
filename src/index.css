@@ -788,9 +788,6 @@ button, input, textarea, select {
 
 /* Visual Query Builder */
 .visual-builder-container {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 20px;

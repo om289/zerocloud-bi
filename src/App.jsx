@@ -471,7 +471,7 @@ function App() {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
                 {/* Switch top pane based on mode */}
-                <div style={{ height: `${topHeight}%`, minHeight: '0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div style={{ flex: topHeight, minHeight: '0', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
                   {workspaceMode === 'sql' ? (
                     <QueryEditor 
                       query={query} 
@@ -502,7 +502,7 @@ function App() {
                 {/* Results grid / single Chart workspace at the bottom */}
                 <div 
                   className="glass-panel tabs-container"
-                  style={{ height: `${100 - topHeight}%`, minHeight: '0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+                  style={{ flex: 100 - topHeight, minHeight: '0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
                 >
                   <div className="tabs-header no-print">
                     <div className="tabs">
