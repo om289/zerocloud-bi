@@ -362,9 +362,28 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
         <div className="glass-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column' }}>
           <h4 style={{ fontSize: '0.85rem', marginBottom: '12px', borderBottom: '1px solid hsl(var(--border))', paddingBottom: '6px', fontFamily: 'Outfit', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>2. Metrics / Aggregates</span>
-            <button className="table-action-btn" onClick={handleAddAggregate} style={{ padding: '2px 6px', fontSize: '0.75rem', display: 'flex', gap: '4px', alignItems: 'center' }} id="btn-builder-add-metric">
+            <button 
+              onClick={handleAddAggregate} 
+              style={{ 
+                padding: '2px 8px', 
+                fontSize: '0.72rem', 
+                height: '24px', 
+                display: 'flex', 
+                gap: '4px', 
+                alignItems: 'center', 
+                borderColor: 'hsla(var(--accent-secondary), 0.4)', 
+                color: 'hsl(var(--accent-secondary))',
+                backgroundColor: 'hsla(var(--accent-secondary), 0.08)',
+                cursor: 'pointer',
+                borderRadius: '4px',
+                borderWidth: '1px',
+                borderStyle: 'solid',
+                transition: '0.15s ease-in-out'
+              }} 
+              id="btn-builder-add-metric"
+            >
               <Plus size={12} />
-              <span>Add</span>
+              <span style={{ fontWeight: 600 }}>Add</span>
             </button>
           </h4>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '180px', overflowY: 'auto', flex: 1 }}>
@@ -411,14 +430,29 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
           <h4 style={{ fontSize: '0.85rem', marginBottom: '12px', borderBottom: '1px solid hsl(var(--border))', paddingBottom: '6px', fontFamily: 'Outfit', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>3. Visual Joins</span>
             <button 
-              className="table-action-btn" 
               onClick={handleAddJoin} 
               disabled={!otherTablesAvailable}
-              style={{ padding: '2px 6px', fontSize: '0.75rem', display: 'flex', gap: '4px', alignItems: 'center', opacity: otherTablesAvailable ? 1 : 0.4 }}
+              style={{ 
+                padding: '2px 8px', 
+                fontSize: '0.72rem', 
+                height: '24px', 
+                display: 'flex', 
+                gap: '4px', 
+                alignItems: 'center', 
+                borderColor: otherTablesAvailable ? 'hsla(var(--accent-secondary), 0.4)' : 'hsl(var(--border))', 
+                color: otherTablesAvailable ? 'hsl(var(--accent-secondary))' : 'hsl(var(--text-dark))',
+                backgroundColor: otherTablesAvailable ? 'hsla(var(--accent-secondary), 0.08)' : 'transparent',
+                cursor: otherTablesAvailable ? 'pointer' : 'not-allowed',
+                borderRadius: '4px',
+                borderWidth: '1px',
+                borderStyle: 'solid',
+                opacity: otherTablesAvailable ? 1 : 0.4,
+                transition: '0.15s ease-in-out'
+              }}
               id="btn-builder-add-join"
             >
               <Plus size={12} />
-              <span>Add</span>
+              <span style={{ fontWeight: 600 }}>Add</span>
             </button>
           </h4>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '180px', overflowY: 'auto', flex: 1 }}>
@@ -494,9 +528,28 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
         <div className="glass-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column' }}>
           <h4 style={{ fontSize: '0.85rem', marginBottom: '12px', borderBottom: '1px solid hsl(var(--border))', paddingBottom: '6px', fontFamily: 'Outfit', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>4. Calculated Fields</span>
-            <button className="table-action-btn" onClick={handleAddCalcField} style={{ padding: '2px 6px', fontSize: '0.75rem', display: 'flex', gap: '4px', alignItems: 'center' }} id="btn-builder-add-calc">
+            <button 
+              onClick={handleAddCalcField} 
+              style={{ 
+                padding: '2px 8px', 
+                fontSize: '0.72rem', 
+                height: '24px', 
+                display: 'flex', 
+                gap: '4px', 
+                alignItems: 'center', 
+                borderColor: 'hsla(var(--accent-secondary), 0.4)', 
+                color: 'hsl(var(--accent-secondary))',
+                backgroundColor: 'hsla(var(--accent-secondary), 0.08)',
+                cursor: 'pointer',
+                borderRadius: '4px',
+                borderWidth: '1px',
+                borderStyle: 'solid',
+                transition: '0.15s ease-in-out'
+              }} 
+              id="btn-builder-add-calc"
+            >
               <Plus size={12} />
-              <span>Add</span>
+              <span style={{ fontWeight: 600 }}>Add</span>
             </button>
           </h4>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto', flex: 1 }}>
@@ -538,9 +591,28 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
         <div className="glass-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column' }}>
           <h4 style={{ fontSize: '0.85rem', marginBottom: '12px', borderBottom: '1px solid hsl(var(--border))', paddingBottom: '6px', fontFamily: 'Outfit', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>5. Filters (WHERE)</span>
-            <button className="table-action-btn" onClick={handleAddFilter} style={{ padding: '2px 6px', fontSize: '0.75rem', display: 'flex', gap: '4px', alignItems: 'center' }} id="btn-builder-add-filter">
+            <button 
+              onClick={handleAddFilter} 
+              style={{ 
+                padding: '2px 8px', 
+                fontSize: '0.72rem', 
+                height: '24px', 
+                display: 'flex', 
+                gap: '4px', 
+                alignItems: 'center', 
+                borderColor: 'hsla(var(--accent-secondary), 0.4)', 
+                color: 'hsl(var(--accent-secondary))',
+                backgroundColor: 'hsla(var(--accent-secondary), 0.08)',
+                cursor: 'pointer',
+                borderRadius: '4px',
+                borderWidth: '1px',
+                borderStyle: 'solid',
+                transition: '0.15s ease-in-out'
+              }} 
+              id="btn-builder-add-filter"
+            >
               <Plus size={12} />
-              <span>Add</span>
+              <span style={{ fontWeight: 600 }}>Add</span>
             </button>
           </h4>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '180px', overflowY: 'auto', flex: 1 }}>
