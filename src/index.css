@@ -1283,7 +1283,8 @@ button, input, textarea, select {
   display: grid;
   grid-template-columns: 280px 1fr;
   gap: 20px;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 

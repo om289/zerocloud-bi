@@ -18,7 +18,7 @@ const DataProfiler = memo(function DataProfiler({ activeTable }) {
       setError(null);
       
       try {
-        const sql = `SUMMARIZE ${activeTable};`;
+        const sql = `SUMMARIZE "${activeTable}";`;
         const result = await runQuery(sql);
         if (result.success) {
           setProfileData(result);
