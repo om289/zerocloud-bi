@@ -656,6 +656,8 @@ const DashboardCanvas = memo(function DashboardCanvas({
         })}
         </div>
       )}
+    </div>
+  );
 });
 
 export default DashboardCanvas;

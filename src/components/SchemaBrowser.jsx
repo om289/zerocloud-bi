@@ -3,6 +3,7 @@ import { Database, ChevronDown, ChevronRight, Play, Trash2 } from 'lucide-react'
 
 const SchemaBrowser = memo(function SchemaBrowser({ tables, onSelectTable, onDeleteTable }) {
   const [expandedTables, setExpandedTables] = useState({});
+  const [searchQuery, setSearchQuery] = useState('');
 
   const toggleExpand = (tableName) => {
     setExpandedTables(prev => ({
@@ -11,17 +12,43 @@ const SchemaBrowser = memo(function SchemaBrowser({ tables, onSelectTable, onDel
     }));
   };
 
+  const filteredTables = tables.filter(t => 
+    t.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
     <div className="schema-browser">
       <div className="schema-section-title">Ingested Tables ({tables.length})</div>
       
-      {tables.length === 0 ? (
+      {tables.length > 0 && (
+        <div style={{ padding: '0 8px 10px 8px' }}>
+          <input
+            type="text"
+            placeholder="Search tables..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="form-select"
+            style={{ 
+              padding: '4px 8px', 
+              fontSize: '0.75rem', 
+              height: '28px', 
+              width: '100%', 
+              backgroundColor: 'rgba(0,0,0,0.2)',
+              border: '1px solid hsl(var(--border))',
+              borderRadius: '4px',
+              color: 'hsl(var(--text-main))'
+            }}
+          />
+        </div>
+      )}
+      
+      {filteredTables.length === 0 ? (
         <div style={{ fontSize: '0.8rem', color: 'hsl(var(--text-dark))', textAlign: 'center', padding: '20px 0' }}>
-          No active tables. Drop a file above to load it.
+          {tables.length === 0 ? "No active tables. Drop a file above to load it." : "No tables match search."}
         </div>
       ) : (
         <div className="table-list">
-          {tables.map((table) => {
+          {filteredTables.map((table) => {
             const isExpanded = !!expandedTables[table.name];
             return (
               <div className="table-item" key={table.name}>

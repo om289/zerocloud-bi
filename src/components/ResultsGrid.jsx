@@ -3,11 +3,13 @@ import { Download, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react
 
 const ResultsGrid = memo(function ResultsGrid({ result }) {
   const [page, setPage] = useState(1);
+  const [gridSearch, setGridSearch] = useState('');
   const rowsPerPage = 50;
 
-  // Reset page to 1 whenever a new query execution result arrives
+  // Reset page and search filter whenever a new query execution result arrives
   useEffect(() => {
     setPage(1);
+    setGridSearch('');
   }, [result]);
 
   if (!result) {
@@ -54,33 +56,55 @@ const ResultsGrid = memo(function ResultsGrid({ result }) {
     );
   }
 
-  const totalPages = Math.ceil(rows.length / rowsPerPage);
+  // Client-side filtration of rows
+  const filteredRows = React.useMemo(() => {
+    if (!gridSearch.trim()) return rows;
+    const queryLower = gridSearch.toLowerCase();
+    return rows.filter(row => 
+      columns.some(col => String(row[col] ?? '').toLowerCase().includes(queryLower))
+    );
+  }, [rows, columns, gridSearch]);
+
+  const totalPages = Math.ceil(filteredRows.length / rowsPerPage);
   const startIndex = (page - 1) * rowsPerPage;
-  const paginatedRows = rows.slice(startIndex, startIndex + rowsPerPage);
+  const paginatedRows = filteredRows.slice(startIndex, startIndex + rowsPerPage);
 
   const handleExportCSV = () => {
-    if (rows.length === 0) return;
+    if (filteredRows.length === 0) return;
     
-    // Convert JSON array to CSV format
     const csvHeader = columns.join(',');
-    const csvRows = rows.map(row => 
+    const csvRows = filteredRows.map(row => 
       columns.map(col => {
         let val = row[col];
         if (val === null || val === undefined) return '';
-        // Escape double quotes by doubling them
         val = String(val).replace(/"/g, '""');
         return `"${val}"`;
       }).join(',')
     );
     
-    const csvContent = "data:text/csv;charset=utf-8," + [csvHeader, ...csvRows].join('\n');
-    const encodedUri = encodeURI(csvContent);
+    const blob = new Blob([[csvHeader, ...csvRows].join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
+    link.setAttribute("href", url);
     link.setAttribute("download", `query_export_${Date.now()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportJSON = () => {
+    if (filteredRows.length === 0) return;
+    
+    const blob = new Blob([JSON.stringify(filteredRows, null, 2)], { type: 'application/json;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `query_export_${Date.now()}.json`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const renderCellValue = (val) => {
@@ -105,13 +129,32 @@ const ResultsGrid = memo(function ResultsGrid({ result }) {
         alignItems: 'center',
         padding: '10px 20px',
         borderBottom: '1px solid hsl(var(--border))',
-        backgroundColor: 'rgba(0,0,0,0.08)'
+        backgroundColor: 'rgba(0,0,0,0.08)',
+        gap: '12px',
+        flexWrap: 'wrap'
       }}>
         <div style={{ fontSize: '0.8rem', color: 'hsl(var(--text-muted))' }}>
-          Showing {startIndex + 1} - {Math.min(rows.length, startIndex + rowsPerPage)} of {rows.length} rows
+          Showing {filteredRows.length === 0 ? 0 : startIndex + 1} - {Math.min(filteredRows.length, startIndex + rowsPerPage)} of {filteredRows.length} rows
+          {gridSearch && ` (filtered from ${rows.length})`}
+          {result.executionTimeMs !== undefined && ` | Time: ${result.executionTimeMs}ms`}
         </div>
 
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <input 
+            type="text" 
+            placeholder="Search rows..." 
+            className="form-select" 
+            value={gridSearch}
+            onChange={(e) => { setGridSearch(e.target.value); setPage(1); }}
+            style={{ 
+              padding: '2px 8px', 
+              fontSize: '0.75rem', 
+              height: '28px', 
+              width: '140px', 
+              backgroundColor: 'hsl(var(--bg-main))' 
+            }}
+          />
+
           <button 
             className="btn-outline" 
             style={{ padding: '6px 10px', fontSize: '0.75rem', height: '28px' }}
@@ -120,6 +163,16 @@ const ResultsGrid = memo(function ResultsGrid({ result }) {
           >
             <Download size={12} />
             <span>Export CSV</span>
+          </button>
+
+          <button 
+            className="btn-outline" 
+            style={{ padding: '6px 10px', fontSize: '0.75rem', height: '28px' }}
+            onClick={handleExportJSON}
+            id="btn-export-json"
+          >
+            <Download size={12} />
+            <span>Export JSON</span>
           </button>
           
           {totalPages > 1 && (
