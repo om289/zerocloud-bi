@@ -349,8 +349,8 @@ button, input, textarea, select {
 
 /* SQL Editor panel */
 .editor-panel {
-  flex: 2;
-  min-height: 240px;
+  flex: 1;
+  min-height: 0;
 }
 
 .panel-header {
@@ -788,12 +788,12 @@ button, input, textarea, select {
 
 /* Visual Query Builder */
 .visual-builder-container {
-  flex: 2;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 20px;
-  min-height: 250px;
 }
 
 .builder-grid {
