@@ -29,6 +29,95 @@ function App() {
   const [showSnippets, setShowSnippets] = useState(false);
   const [toast, setToast] = useState({ message: '', type: '' });
 
+  // Resizable Splitter States (LeetCode Style)
+  const [topHeight, setTopHeight] = useState(40); // Initial split height at 40% (leaving 60% for results)
+  const [isDragging, setIsDragging] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(300); // Initial sidebar width in pixels
+  const [isSidebarDragging, setIsSidebarDragging] = useState(false);
+  const workspaceContentRef = React.useRef(null);
+  const appContainerRef = React.useRef(null);
+
+  const handleMouseDown = useCallback((e) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const handleSidebarMouseDown = useCallback((e) => {
+    e.preventDefault();
+    setIsSidebarDragging(true);
+  }, []);
+
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!isDragging || !workspaceContentRef.current) return;
+      const rect = workspaceContentRef.current.getBoundingClientRect();
+      const relativeY = e.clientY - rect.top;
+      let percentage = (relativeY / rect.height) * 100;
+      
+      // Boundaries: min 15%, max 85%
+      if (percentage < 15) percentage = 15;
+      if (percentage > 85) percentage = 85;
+      
+      setTopHeight(percentage);
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'row-resize';
+      document.body.style.userSelect = 'none';
+    } else {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isDragging]);
+
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!isSidebarDragging || !appContainerRef.current) return;
+      const rect = appContainerRef.current.getBoundingClientRect();
+      let width = e.clientX - rect.left;
+      
+      // Boundaries: min 200px, max 600px
+      if (width < 200) width = 200;
+      if (width > 600) width = 600;
+      
+      setSidebarWidth(width);
+    };
+
+    const handleMouseUp = () => {
+      setIsSidebarDragging(false);
+    };
+
+    if (isSidebarDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    } else {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isSidebarDragging]);
+
   const showNotification = useCallback((message, type = 'success') => {
     setToast({ message, type });
     setTimeout(() => {
@@ -243,9 +332,9 @@ function App() {
   const activeTableObj = tables.length > 0 ? tables[tables.length - 1] : null;
 
   return (
-    <div className="app-container">
+    <div ref={appContainerRef} className="app-container">
       {/* Sidebar Controls */}
-      <aside className="sidebar no-print">
+      <aside className="sidebar no-print" style={{ width: `${sidebarWidth}px`, flexShrink: 0 }}>
         <div className="sidebar-header">
           <h1>
             ZeroCloud BI
@@ -270,6 +359,12 @@ function App() {
           />
         </div>
       </aside>
+
+      {/* Vertical LeetCode Resizer */}
+      <div 
+        onMouseDown={handleSidebarMouseDown}
+        className="sidebar-splitter no-print"
+      />
 
       {/* Main Analysis Workspace */}
       <main className="workspace">
@@ -344,7 +439,7 @@ function App() {
 
         {/* Workspace views split pane */}
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-          <div className="workspace-content" style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+          <div ref={workspaceContentRef} className="workspace-content" style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
             
             {workspaceMode === 'dashboard' ? (
               <DashboardCanvas 
@@ -374,30 +469,41 @@ function App() {
                 tables={tables}
               />
             ) : (
-              <>
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
                 {/* Switch top pane based on mode */}
-                {workspaceMode === 'sql' ? (
-                  <QueryEditor 
-                    query={query} 
-                    setQuery={setQuery} 
-                    onRunQuery={handleRunQuery} 
-                    isRunning={isRunning} 
-                    lastExecutionResult={result} 
-                    activeTable={activeTableObj?.name}
-                    columns={activeTableObj?.columns || []}
-                  />
-                ) : (
-                  <VisualQueryBuilder 
-                    activeTable={activeTableObj?.name}
-                    columns={activeTableObj?.columns || []}
-                    tables={tables}
-                    onRunQuery={handleRunQuery}
-                    isRunning={isRunning}
-                  />
-                )}
+                <div style={{ height: `${topHeight}%`, minHeight: '0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                  {workspaceMode === 'sql' ? (
+                    <QueryEditor 
+                      query={query} 
+                      setQuery={setQuery} 
+                      onRunQuery={handleRunQuery} 
+                      isRunning={isRunning} 
+                      lastExecutionResult={result} 
+                      activeTable={activeTableObj?.name}
+                      columns={activeTableObj?.columns || []}
+                    />
+                  ) : (
+                    <VisualQueryBuilder 
+                      activeTable={activeTableObj?.name}
+                      columns={activeTableObj?.columns || []}
+                      tables={tables}
+                      onRunQuery={handleRunQuery}
+                      isRunning={isRunning}
+                    />
+                  )}
+                </div>
+
+                {/* LeetCode style drag splitter */}
+                <div 
+                  onMouseDown={handleMouseDown}
+                  className="workspace-splitter"
+                />
 
                 {/* Results grid / single Chart workspace at the bottom */}
-                <div className="glass-panel tabs-container">
+                <div 
+                  className="glass-panel tabs-container"
+                  style={{ height: `${100 - topHeight}%`, minHeight: '0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+                >
                   <div className="tabs-header no-print">
                     <div className="tabs">
                       <button 
@@ -427,15 +533,17 @@ function App() {
                     </div>
                   </div>
 
-                  {activeTab === 'data' ? (
-                    <ResultsGrid result={result} />
-                  ) : activeTab === 'profile' ? (
-                    <DataProfiler activeTable={activeTableObj?.name} />
-                  ) : (
-                    <ChartBuilder result={result} onPinCard={handlePinCard} />
-                  )}
+                  <div className="tab-content" style={{ flex: 1, minHeight: '0', overflow: 'hidden' }}>
+                    {activeTab === 'data' ? (
+                      <ResultsGrid result={result} />
+                    ) : activeTab === 'profile' ? (
+                      <DataProfiler activeTable={activeTableObj?.name} />
+                    ) : (
+                      <ChartBuilder result={result} onPinCard={handlePinCard} />
+                    )}
+                  </div>
                 </div>
-              </>
+              </div>
             )}
           </div>
 

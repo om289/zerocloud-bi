@@ -571,7 +571,8 @@ button, input, textarea, select {
 /* Chart Builder panel */
 .chart-builder-workspace {
   display: flex;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -1435,4 +1436,77 @@ button, input, textarea, select {
   outline: none;
   font-size: 0.85rem;
   color: hsl(var(--text-main));
+}
+
+/* LeetCode Resizable Splitter Styles */
+.sidebar-splitter {
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  background-color: hsl(var(--border));
+  transition: var(--transition-fast);
+  position: relative;
+  flex-shrink: 0;
+  z-index: 50;
+}
+
+.sidebar-splitter:hover {
+  background-color: hsla(var(--accent-secondary), 0.5);
+}
+
+.sidebar-splitter:active {
+  background-color: hsl(var(--accent-secondary));
+}
+
+.sidebar-splitter::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 24px;
+  border-radius: 1px;
+  background-color: hsl(var(--text-dark));
+}
+
+.sidebar-splitter:hover::after {
+  background-color: hsl(var(--text-main));
+}
+
+.workspace-splitter {
+  height: 6px;
+  width: 100%;
+  cursor: row-resize;
+  background-color: hsl(var(--border));
+  margin: 2px 0;
+  border-radius: 3px;
+  transition: var(--transition-fast);
+  position: relative;
+  flex-shrink: 0;
+  z-index: 50;
+}
+
+.workspace-splitter:hover {
+  background-color: hsla(var(--accent-secondary), 0.5);
+}
+
+.workspace-splitter:active {
+  background-color: hsl(var(--accent-secondary));
+}
+
+.workspace-splitter::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 24px;
+  height: 2px;
+  border-radius: 1px;
+  background-color: hsl(var(--text-dark));
+}
+
+.workspace-splitter:hover::after {
+  background-color: hsl(var(--text-main));
 }
