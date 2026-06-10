@@ -51,13 +51,14 @@ const QueryEditor = memo(function QueryEditor({ query, setQuery, onRunQuery, isR
     setExplainError(null);
     setExplainPlan(null);
 
-    const explainQuery = `EXPLAIN ${query};`;
+    const cleanedQuery = query.trim().replace(/;+$/, '');
+    const explainQuery = `EXPLAIN ${cleanedQuery};`;
     try {
       const result = await runQuery(explainQuery);
-      if (result.success && result.rows.length > 0) {
+      if (result.success && result.rows && result.rows.length > 0 && result.columns && result.columns.length > 0) {
         // Typically has "Explain Plan" or "value" column
         const planKey = result.columns[0];
-        const planText = result.rows.map(r => r[planKey]).join('\n');
+        const planText = result.rows.map(r => r[planKey]).filter(val => val !== undefined && val !== null).join('\n');
         setExplainPlan(planText);
       } else {
         setExplainError(result.error || "Failed to retrieve execution plan.");
@@ -203,20 +204,31 @@ const QueryEditor = memo(function QueryEditor({ query, setQuery, onRunQuery, isR
   const formatQuery = () => {
     if (!query) return;
     
-    // Simple query formatting keywords replacement to uppercase
+    // Clean up extra spaces
+    let sql = query.trim().replace(/\s+/g, ' ');
+    
+    // Replace standard keywords to uppercase and insert linebreaks
     const keywords = [
-      'select', 'from', 'where', 'group by', 'order by', 'limit', 'join', 
-      'left join', 'inner join', 'right join', 'full join', 'on', 'and', 'or', 
-      'having', 'pivot', 'over', 'partition by'
+      'SELECT', 'FROM', 'WHERE', 'GROUP BY', 'ORDER BY', 'LIMIT', 'JOIN', 
+      'LEFT JOIN', 'INNER JOIN', 'RIGHT JOIN', 'FULL JOIN', 'ON', 'AND', 'OR', 
+      'HAVING', 'PIVOT', 'USING', 'OVER', 'PARTITION BY'
     ];
     
-    let formatted = query;
-    keywords.forEach(keyword => {
-      const regex = new RegExp(`\\b${keyword}\\b`, 'gi');
-      formatted = formatted.replace(regex, keyword.toUpperCase());
+    keywords.forEach(kw => {
+      const regex = new RegExp(`\\b${kw}\\b`, 'gi');
+      sql = sql.replace(regex, kw);
     });
 
-    setQuery(formatted);
+    // Format query structure with linebreaks and indentation
+    sql = sql
+      .replace(/\b(SELECT)\b/g, '$1')
+      .replace(/\b(FROM|WHERE|GROUP BY|ORDER BY|LIMIT|HAVING|PIVOT|LEFT JOIN|INNER JOIN|RIGHT JOIN|FULL JOIN|JOIN)\b/g, '\n$1')
+      .replace(/\b(AND|OR)\b/g, '\n  $1');
+
+    // Remove any double line breaks or extra spaces near newlines
+    sql = sql.split('\n').map(line => line.trimEnd()).join('\n');
+    
+    setQuery(sql);
   };
 
   const clearQuery = () => {

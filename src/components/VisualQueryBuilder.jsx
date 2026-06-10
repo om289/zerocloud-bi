@@ -1,6 +1,15 @@
 import React, { useState, useEffect, useMemo, memo } from 'react';
 import { Plus, Trash2, Code, Play } from 'lucide-react';
 
+const quoteIdentifier = (ident) => {
+  if (!ident) return '';
+  if (ident.includes('"') || ident.includes('(')) return ident;
+  if (ident.includes('.')) {
+    return ident.split('.').map(part => `"${part}"`).join('.');
+  }
+  return `"${ident}"`;
+};
+
 const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, columns, tables = [], onRunQuery, isRunning }) {
   // Joins Configuration
   const [joins, setJoins] = useState([]); // Array of { joinTable: '', joinType: 'INNER JOIN', activeKey: '', joinKey: '' }
@@ -77,7 +86,7 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
     }
 
     let selectClause = '';
-    let fromClause = `FROM ${activeTable}`;
+    let fromClause = `FROM ${quoteIdentifier(activeTable)}`;
     let joinClause = '';
     let whereClause = '';
     let groupByClause = '';
@@ -87,20 +96,20 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
     // Select dimensions, metrics & calculated fields
     const selectParts = [];
     selectedColumns.forEach(col => {
-      selectParts.push(col);
+      selectParts.push(quoteIdentifier(col));
     });
 
     aggregates.forEach(agg => {
       if (agg.column && agg.function) {
-        // Safe alias generation by replacing dot and parens
-        const safeAlias = `${agg.function.toLowerCase()}_${agg.column.replace(/\./g, '_')}`;
-        selectParts.push(`${agg.function}(${agg.column}) AS ${safeAlias}`);
+        const quotedCol = quoteIdentifier(agg.column);
+        const safeAlias = `${agg.function.toLowerCase()}_${agg.column.replace(/[^a-zA-Z0-9]/g, '_')}`;
+        selectParts.push(`${agg.function}(${quotedCol}) AS "${safeAlias}"`);
       }
     });
 
     calcFields.forEach(calc => {
       if (calc.expression && calc.alias) {
-        selectParts.push(`${calc.expression} AS ${calc.alias}`);
+        selectParts.push(`${calc.expression} AS "${calc.alias}"`);
       }
     });
 
@@ -113,7 +122,10 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
     // Joins SQL Compilation
     joins.forEach(join => {
       if (join.joinTable && join.activeKey && join.joinKey) {
-        joinClause += `\n${join.joinType} ${join.joinTable} ON ${join.activeKey} = ${join.joinTable}.${join.joinKey}`;
+        const quotedJoinTable = `"${join.joinTable}"`;
+        const quotedActiveKey = quoteIdentifier(join.activeKey);
+        const quotedJoinKey = `"${join.joinTable}"."${join.joinKey}"`;
+        joinClause += `\n${join.joinType} ${quotedJoinTable} ON ${quotedActiveKey} = ${quotedJoinKey}`;
       }
     });
 
@@ -125,34 +137,35 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
           let val = f.value;
           const colInfo = availableColumns.find(c => c.name === f.column);
           const isString = colInfo && (colInfo.type.includes('VARCHAR') || colInfo.type.includes('TEXT'));
+          const quotedCol = quoteIdentifier(f.column);
 
           if (f.operator === 'IS NULL' || f.operator === 'IS NOT NULL') {
-            return `${f.column} ${f.operator}`;
+            return `${quotedCol} ${f.operator}`;
           }
 
           if (f.operator === 'BETWEEN') {
             const val2 = f.value2 || '';
             if (isString) {
-              return `${f.column} BETWEEN '${val}' AND '${val2}'`;
+              return `${quotedCol} BETWEEN '${val}' AND '${val2}'`;
             }
-            return `${f.column} BETWEEN ${val} AND ${val2}`;
+            return `${quotedCol} BETWEEN ${val} AND ${val2}`;
           }
 
           if (f.operator === 'IN') {
             // Split by comma
             const items = val.split(',').map(x => x.trim());
             const formattedItems = items.map(item => isString ? `'${item}'` : item).join(', ');
-            return `${f.column} IN (${formattedItems})`;
+            return `${quotedCol} IN (${formattedItems})`;
           }
 
           if (f.operator === 'LIKE') {
-            return `${f.column} LIKE '%${val}%'`;
+            return `${quotedCol} LIKE '%${val}%'`;
           }
           
           if (isString) {
-            return `${f.column} ${f.operator} '${val}'`;
+            return `${quotedCol} ${f.operator} '${val}'`;
           }
-          return `${f.column} ${f.operator} ${val}`;
+          return `${quotedCol} ${f.operator} ${val}`;
         });
       
       if (filterParts.length > 0) {
@@ -162,12 +175,13 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
 
     // Group By columns (only generated if aggregates exist)
     if (groupBy.length > 0 && aggregates.length > 0) {
-      groupByClause = `GROUP BY ${groupBy.join(', ')}`;
+      const quotedGroupBy = groupBy.map(col => quoteIdentifier(col));
+      groupByClause = `GROUP BY ${quotedGroupBy.join(', ')}`;
     }
 
     // Order By
     if (sortBy.column) {
-      orderByClause = `ORDER BY ${sortBy.column} ${sortBy.direction}`;
+      orderByClause = `ORDER BY ${quoteIdentifier(sortBy.column)} ${sortBy.direction}`;
     }
 
     // Construct full SQL query
@@ -190,13 +204,14 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
   };
 
   const handleAddJoin = () => {
-    const otherTables = tables.filter(t => t.name !== activeTable);
+    const otherTables = tables.filter(t => t.name !== activeTable && !joins.some(j => j.joinTable === t.name));
     if (otherTables.length === 0) return;
+    const targetTable = otherTables[0];
     setJoins(prev => [...prev, { 
-      joinTable: otherTables[0]?.name || '', 
+      joinTable: targetTable.name, 
       joinType: 'INNER JOIN', 
       activeKey: columns[0]?.name ? `${activeTable}.${columns[0].name}` : '', 
-      joinKey: otherTables[0]?.columns[0]?.name || '' 
+      joinKey: targetTable.columns[0]?.name || '' 
     }]);
   };
 
@@ -316,7 +331,7 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
     );
   };
 
-  const otherTablesAvailable = tables.filter(t => t.name !== activeTable).length > 0;
+  const otherTablesAvailable = tables.filter(t => t.name !== activeTable && !joins.some(j => j.joinTable === t.name)).length > 0;
 
   return (
     <div className="visual-builder-container">
@@ -435,7 +450,7 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
                         onChange={(e) => handleUpdateJoin(idx, 'joinTable', e.target.value)}
                         style={{ padding: '2px 4px', fontSize: '0.7rem', height: '24px', flex: 1 }}
                       >
-                        {tables.filter(t => t.name !== activeTable).map(t => (
+                        {tables.filter(t => t.name !== activeTable && (!joins.some(j => j.joinTable === t.name) || j.joinTable === join.joinTable)).map(t => (
                           <option key={t.name} value={t.name}>{t.name}</option>
                         ))}
                       </select>
@@ -452,8 +467,8 @@ const VisualQueryBuilder = memo(function VisualQueryBuilder({ activeTable, colum
                         onChange={(e) => handleUpdateJoin(idx, 'activeKey', e.target.value)}
                         style={{ padding: '2px 4px', fontSize: '0.65rem', height: '22px', flex: 1 }}
                       >
-                        {columns.map(c => (
-                          <option key={c.name} value={`${activeTable}.${c.name}`}>{c.name}</option>
+                        {availableColumns.map(c => (
+                          <option key={c.name} value={c.name}>{c.name}</option>
                         ))}
                       </select>
                       <span>=</span>
