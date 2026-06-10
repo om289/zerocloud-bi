@@ -1,12 +1,60 @@
-import React, { useState, useMemo, useRef, memo } from 'react';
+import React, { useState, useMemo, useRef, useEffect, memo } from 'react';
+import { Rnd } from 'react-rnd';
 import { ResponsiveContainer, BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
-import { Trash2, Code, Printer, LayoutGrid, Download, MoveLeft, MoveRight, HardDriveDownload, HardDriveUpload } from 'lucide-react';
+import { Trash2, Code, Printer, LayoutGrid, Download, MoveLeft, MoveRight, HardDriveDownload, HardDriveUpload, Filter, RefreshCw, Maximize2, CornerDownLeft, CornerDownRight, CornerUpLeft, CornerUpRight } from 'lucide-react';
+import { runQuery } from '../lib/duckdb';
+
+const clientSideFilter = (rows, filter) => {
+  if (!rows || !filter) return rows;
+  return rows.filter(row => {
+    const keys = Object.keys(row);
+    const matchedKey = keys.find(k => 
+      k.toLowerCase() === filter.column.toLowerCase() || 
+      k.toLowerCase().endsWith('.' + filter.column.toLowerCase())
+    );
+
+    if (!matchedKey) return true; // Skip filtering if column is missing from this widget result
+
+    const cellVal = String(row[matchedKey]).toLowerCase();
+    const filterValStr = String(filter.value).toLowerCase();
+
+    switch (filter.operator) {
+      case '!=': return cellVal !== filterValStr;
+      case '>': return Number(cellVal) > Number(filterValStr);
+      case '<': return Number(cellVal) < Number(filterValStr);
+      case 'LIKE': return cellVal.includes(filterValStr);
+      case '=':
+      default:
+        return cellVal === filterValStr;
+    }
+  });
+};
+
+const buildFilteredSql = (originalSql, column, operator, value) => {
+  if (!originalSql || !column) return originalSql;
+  const strippedSql = originalSql.trim().replace(/;+$/, '');
+  
+  if (operator === 'LIKE') {
+    const escapedValue = String(value).replace(/'/g, "''");
+    return `SELECT * FROM (${strippedSql}) AS subq WHERE CAST(subq."${column}" AS VARCHAR) ILIKE '%${escapedValue}%';`;
+  }
+  
+  const isNumeric = !isNaN(Number(value)) && value.trim() !== '';
+  let sqlValue;
+  if (isNumeric) {
+    sqlValue = Number(value);
+  } else {
+    sqlValue = `'${String(value).replace(/'/g, "''")}'`;
+  }
+  
+  return `SELECT * FROM (${strippedSql}) AS subq WHERE subq."${column}" ${operator} ${sqlValue};`;
+};
 
 const DashboardCanvas = memo(function DashboardCanvas({ 
   cards, 
   onRemoveCard, 
   onRenameCard,
-  onReorderCards, // callback to shift card indexes
+  onReorderCards,
   tables = [],
   dbReady,
   onSaveWorkspace,
@@ -14,11 +62,97 @@ const DashboardCanvas = memo(function DashboardCanvas({
 }) {
   const [showSql, setShowSql] = useState({});
   const [colsLayout, setColsLayout] = useState(2); // 1, 2, or 3 columns
+  const [floatingMode, setFloatingMode] = useState(false); // Toggle floating widget mode
+  const [widgetPositions, setWidgetPositions] = useState({}); // Track floating positions
+
+  // Global Dashboard Filter States
+  const [filterCol, setFilterCol] = useState('');
+  const [filterOp, setFilterOp] = useState('=');
+  const [filterVal, setFilterVal] = useState('');
+  const [distinctValues, setDistinctValues] = useState([]);
+  const [activeGlobalFilter, setActiveGlobalFilter] = useState(null);
+  const [filteredCardData, setFilteredCardData] = useState({});
+  const [loadingFilters, setLoadingFilters] = useState(false);
+
+  useEffect(() => {
+    const applyFilterQueries = async () => {
+      if (!activeGlobalFilter) {
+        setFilteredCardData({});
+        return;
+      }
+
+      setLoadingFilters(true);
+      const newFilteredData = {};
+
+      for (const card of cards) {
+        if (!card.sql) {
+          newFilteredData[card.id] = clientSideFilter(card.rows, activeGlobalFilter);
+          continue;
+        }
+
+        const modifiedSql = buildFilteredSql(card.sql, activeGlobalFilter.column, activeGlobalFilter.operator, activeGlobalFilter.value);
+        try {
+          const res = await runQuery(modifiedSql);
+          if (res.success) {
+            newFilteredData[card.id] = res.rows;
+          } else {
+            console.warn(`Query failed for card ${card.id}:`, res.error, "Modified SQL:", modifiedSql);
+            newFilteredData[card.id] = clientSideFilter(card.rows, activeGlobalFilter);
+          }
+        } catch (e) {
+          console.warn(`Error running query for card ${card.id}:`, e);
+          newFilteredData[card.id] = clientSideFilter(card.rows, activeGlobalFilter);
+        }
+      }
+
+      setFilteredCardData(newFilteredData);
+      setLoadingFilters(false);
+    };
+
+    applyFilterQueries();
+  }, [activeGlobalFilter, cards]);
 
   const colors = [
     '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ec4899', 
     '#3b82f6', '#ef4444', '#a855f7', '#14b8a6', '#f43f5e'
   ];
+
+  const activeTable = tables.length > 0 ? tables[tables.length - 1] : null;
+
+  // Dynamically load distinct values of selected column for the dropdown list
+  useEffect(() => {
+    const loadDistinct = async () => {
+      if (!filterCol || !activeTable) {
+        setDistinctValues([]);
+        return;
+      }
+
+      // Query top 100 unique values
+      const sql = `SELECT DISTINCT ${filterCol} FROM ${activeTable.name} WHERE ${filterCol} IS NOT NULL ORDER BY 1 LIMIT 100;`;
+      try {
+        const result = await runQuery(sql);
+        if (result.success) {
+          const vals = result.rows.map(r => r[filterCol]);
+          setDistinctValues(vals);
+          setFilterVal(vals[0] ? String(vals[0]) : '');
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    loadDistinct();
+  }, [filterCol, activeTable]);
+
+  // Set default filter column when activeTable changes
+  useEffect(() => {
+    if (activeTable && activeTable.columns.length > 0) {
+      setFilterCol(activeTable.columns[0].name);
+    } else {
+      setFilterCol('');
+    }
+    setActiveGlobalFilter(null);
+  }, [activeTable]);
 
   const toggleSql = (cardId) => {
     setShowSql(prev => ({ ...prev, [cardId]: !prev[cardId] }));
@@ -31,7 +165,6 @@ const DashboardCanvas = memo(function DashboardCanvas({
   const downloadWidgetCSV = (card) => {
     if (!card.rows || card.rows.length === 0) return;
     
-    // Generate CSV contents
     const keys = Object.keys(card.rows[0]);
     const csvHeader = keys.join(',');
     const csvRows = card.rows.map(row => 
@@ -66,9 +199,30 @@ const DashboardCanvas = memo(function DashboardCanvas({
     onReorderCards(updated);
   };
 
+  const applyGlobalFilter = () => {
+    if (!filterCol || !filterVal) return;
+    setActiveGlobalFilter({
+      column: filterCol,
+      operator: filterOp,
+      value: filterVal
+    });
+  };
+
+  const clearGlobalFilter = () => {
+    setActiveGlobalFilter(null);
+    setFilterVal('');
+  };
+
+  // Pre-process and apply global filters to cards data rows
+  const getFilteredCardRows = (card) => {
+    if (!activeGlobalFilter) return card.rows;
+    return filteredCardData[card.id] || clientSideFilter(card.rows, activeGlobalFilter);
+  };
+
   const renderCardChart = (card) => {
-    const { chartType, xAxis, yAxis, yAxis2, colorTheme, rows, enableTrendline, stackMode } = card;
-    
+    const { chartType, xAxis, yAxis, yAxis2, colorTheme, enableTrendline, stackMode } = card;
+    const rows = getFilteredCardRows(card);
+
     const themeColors = {
       violet: { primary: '#8b5cf6' },
       cyan: { primary: '#06b6d4' },
@@ -84,7 +238,7 @@ const DashboardCanvas = memo(function DashboardCanvas({
       margin: { top: 5, right: 10, left: -20, bottom: 5 },
     };
 
-    if (!rows || rows.length === 0) return <div style={{ fontSize: '0.8rem', color: 'hsl(var(--text-dark))' }}>No data points available.</div>;
+    if (!rows || rows.length === 0) return <div style={{ fontSize: '0.8rem', color: 'hsl(var(--text-dark))', textAlign: 'center', padding: '40px 0' }}>No matching filter records.</div>;
 
     switch (chartType) {
       case 'line':
@@ -148,12 +302,13 @@ const DashboardCanvas = memo(function DashboardCanvas({
   const totalRecordFootprint = useMemo(() => {
     let count = 0;
     cards.forEach(c => {
-      if (c.rows) count += c.rows.length;
+      const rows = getFilteredCardRows(c);
+      if (rows) count += rows.length;
     });
     return count;
-  }, [cards]);
+  }, [cards, activeGlobalFilter, filteredCardData]);
 
-  const fileUploaderRef = React.useRef(null);
+  const fileUploaderRef = useRef(null);
 
   const handleWorkspaceUpload = (e) => {
     if (e.target.files && e.target.files[0] && onLoadWorkspace) {
@@ -178,8 +333,21 @@ const DashboardCanvas = memo(function DashboardCanvas({
     );
   }
 
-  // Determine grid column class
   const colClass = colsLayout === 1 ? 'grid-cols-1' : colsLayout === 3 ? 'grid-cols-3' : 'grid-cols-2';
+
+  const setWidgetPosition = (cardId, position) => {
+    setWidgetPositions(prev => ({
+      ...prev,
+      [cardId]: position
+    }));
+  };
+
+  const cornerPositions = {
+    'top-left': { x: 20, y: 120 },
+    'top-right': { x: window.innerWidth - 420, y: 120 },
+    'bottom-left': { x: 20, y: window.innerHeight - 420 },
+    'bottom-right': { x: window.innerWidth - 420, y: window.innerHeight - 420 }
+  };
 
   return (
     <div className="dashboard-canvas-container">
@@ -191,14 +359,24 @@ const DashboardCanvas = memo(function DashboardCanvas({
         </div>
         
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          {/* Layout control buttons */}
-          <div style={{ display: 'flex', border: '1px solid hsl(var(--border))', borderRadius: '6px', overflow: 'hidden' }}>
-            <button className={`btn-outline ${colsLayout === 1 ? 'active' : ''}`} style={{ border: 'none', padding: '6px 10px', borderRadius: 0 }} onClick={() => setColsLayout(1)}>1 Col</button>
-            <button className={`btn-outline ${colsLayout === 2 ? 'active' : ''}`} style={{ border: 'none', padding: '6px 10px', borderRadius: 0 }} onClick={() => setColsLayout(2)}>2 Col</button>
-            <button className={`btn-outline ${colsLayout === 3 ? 'active' : ''}`} style={{ border: 'none', padding: '6px 10px', borderRadius: 0 }} onClick={() => setColsLayout(3)}>3 Col</button>
-          </div>
+          {!floatingMode && (
+            <div style={{ display: 'flex', border: '1px solid hsl(var(--border))', borderRadius: '6px', overflow: 'hidden' }}>
+              <button className={`btn-outline ${colsLayout === 1 ? 'active' : ''}`} style={{ border: 'none', padding: '6px 10px', borderRadius: 0 }} onClick={() => setColsLayout(1)}>1 Col</button>
+              <button className={`btn-outline ${colsLayout === 2 ? 'active' : ''}`} style={{ border: 'none', padding: '6px 10px', borderRadius: 0 }} onClick={() => setColsLayout(2)}>2 Col</button>
+              <button className={`btn-outline ${colsLayout === 3 ? 'active' : ''}`} style={{ border: 'none', padding: '6px 10px', borderRadius: 0 }} onClick={() => setColsLayout(3)}>3 Col</button>
+            </div>
+          )}
+          
+          <button 
+            className={`btn-outline ${floatingMode ? 'active' : ''}`}
+            onClick={() => setFloatingMode(!floatingMode)}
+            title="Toggle floating widget mode (like LeetCode)"
+            style={{ padding: '6px 12px' }}
+          >
+            <Maximize2 size={14} />
+            <span>{floatingMode ? 'Grid Mode' : 'Floating Mode'}</span>
+          </button>
 
-          {/* Workspace persist buttons */}
           <button className="btn-outline" onClick={onSaveWorkspace} title="Download whole workspace JSON file">
             <HardDriveDownload size={14} />
             <span>Save Workspace</span>
@@ -217,6 +395,72 @@ const DashboardCanvas = memo(function DashboardCanvas({
         </div>
       </div>
 
+      {/* Global Interactive Filter bar */}
+      {activeTable && (
+        <div className="glass-panel no-print" style={{ padding: '12px 18px', display: 'flex', gap: '12px', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.01)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', color: 'hsl(var(--text-muted))' }}>
+            {loadingFilters ? (
+              <RefreshCw size={14} className="animate-spin" style={{ color: 'hsl(var(--accent-secondary))' }} />
+            ) : (
+              <Filter size={14} style={{ color: 'hsl(var(--accent-secondary))' }} />
+            )}
+            <span style={{ fontWeight: 600 }}>Global Filter:</span>
+          </div>
+
+          <select 
+            className="form-select" 
+            value={filterCol} 
+            onChange={(e) => setFilterCol(e.target.value)}
+            style={{ padding: '3px 8px', fontSize: '0.75rem', height: '26px' }}
+          >
+            {activeTable.columns.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+          </select>
+
+          <select 
+            className="form-select" 
+            value={filterOp} 
+            onChange={(e) => setFilterOp(e.target.value)}
+            style={{ padding: '3px 8px', fontSize: '0.75rem', height: '26px', width: '50px' }}
+          >
+            <option value="=">=</option>
+            <option value="!=">!=</option>
+            <option value="LIKE">contains</option>
+            <option value=">">&gt;</option>
+            <option value="<">&lt;</option>
+          </select>
+
+          {distinctValues.length > 0 ? (
+            <select 
+              className="form-select" 
+              value={filterVal} 
+              onChange={(e) => setFilterVal(e.target.value)}
+              style={{ padding: '3px 8px', fontSize: '0.75rem', height: '26px', minWidth: '120px' }}
+            >
+              {distinctValues.map(v => <option key={String(v)} value={String(v)}>{String(v)}</option>)}
+            </select>
+          ) : (
+            <input 
+              type="text" 
+              placeholder="filter value" 
+              className="form-select" 
+              value={filterVal}
+              onChange={(e) => setFilterVal(e.target.value)}
+              style={{ padding: '3px 8px', fontSize: '0.75rem', height: '26px', width: '120px', backgroundColor: 'hsl(var(--bg-main))' }}
+            />
+          )}
+
+          <button className="btn-run" onClick={applyGlobalFilter} style={{ height: '26px', padding: '0 10px', fontSize: '0.75rem', boxShadow: 'none' }}>
+            Apply Filter
+          </button>
+
+          {activeGlobalFilter && (
+            <button className="btn-outline" onClick={clearGlobalFilter} style={{ height: '26px', padding: '0 8px', fontSize: '0.75rem', color: 'hsl(var(--error))', borderColor: 'hsla(var(--error), 0.2)' }}>
+              Clear ({activeGlobalFilter.column} = {activeGlobalFilter.value})
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Top level KPI indicators */}
       <div className="kpi-container no-print">
         <div className="kpi-card">
@@ -232,7 +476,7 @@ const DashboardCanvas = memo(function DashboardCanvas({
         <div className="kpi-card">
           <span className="kpi-title">Records Pinned</span>
           <span className="kpi-value">{totalRecordFootprint.toLocaleString()}</span>
-          <span className="kpi-subtitle">Represented data points</span>
+          <span className="kpi-subtitle">{activeGlobalFilter ? "Filtered records" : "Total data points"}</span>
         </div>
         <div className="kpi-card">
           <span className="kpi-title">Database Engine</span>
@@ -247,12 +491,115 @@ const DashboardCanvas = memo(function DashboardCanvas({
         <p>Generated Locally | Date: {new Date().toLocaleDateString()} | Offline Wasm Client Sandbox</p>
       </div>
 
-      {/* Grid Canvas */}
-      <div className={`dashboard-grid-canvas ${colClass}`}>
-        {cards.map((card, idx) => {
-          const isSqlVisible = !!showSql[card.id];
-          return (
-            <div key={card.id} className="dashboard-card glass-panel">
+      {/* Grid Canvas or Floating Canvas */}
+      {floatingMode ? (
+        <div className="floating-canvas-container">
+          {cards.map((card, idx) => {
+            const isSqlVisible = !!showSql[card.id];
+            const pos = widgetPositions[card.id] || cornerPositions['top-left'];
+            
+            return (
+              <Rnd
+                key={card.id}
+                default={{
+                  x: pos.x,
+                  y: pos.y,
+                  width: 400,
+                  height: 'auto'
+                }}
+                onDragStop={(e, d) => setWidgetPosition(card.id, { x: d.x, y: d.y })}
+                minWidth={300}
+                minHeight={250}
+                className="floating-widget-wrapper"
+              >
+                <div className="floating-widget glass-panel">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', cursor: 'move' }}>
+                    <input 
+                      type="text" 
+                      value={card.title}
+                      onChange={(e) => onRenameCard(card.id, e.target.value)}
+                      className="dashboard-card-title-input"
+                      placeholder="Untitled Visualization"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    
+                    <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexShrink: 0 }} className="no-print">
+                      <div style={{ display: 'flex', gap: '2px' }} title="Move to corner">
+                        <button 
+                          className="corner-btn"
+                          onClick={() => setWidgetPosition(card.id, cornerPositions['top-left'])}
+                          title="Top-left"
+                        >
+                          <CornerUpLeft size={10} />
+                        </button>
+                        <button 
+                          className="corner-btn"
+                          onClick={() => setWidgetPosition(card.id, cornerPositions['top-right'])}
+                          title="Top-right"
+                        >
+                          <CornerUpRight size={10} />
+                        </button>
+                        <button 
+                          className="corner-btn"
+                          onClick={() => setWidgetPosition(card.id, cornerPositions['bottom-left'])}
+                          title="Bottom-left"
+                        >
+                          <CornerDownLeft size={10} />
+                        </button>
+                        <button 
+                          className="corner-btn"
+                          onClick={() => setWidgetPosition(card.id, cornerPositions['bottom-right'])}
+                          title="Bottom-right"
+                        >
+                          <CornerDownRight size={10} />
+                        </button>
+                      </div>
+
+                      <button className="table-action-btn" title="Download Widget Data" onClick={() => downloadWidgetCSV(card)}>
+                        <Download size={12} />
+                      </button>
+                      <button className="table-action-btn" title="View Source SQL" onClick={() => toggleSql(card.id)}>
+                        <Code size={12} />
+                      </button>
+                      <button className="table-action-btn" title="Remove from Dashboard" onClick={() => onRemoveCard(card.id)} style={{ color: 'hsl(var(--error))' }}>
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Chart container */}
+                  <div style={{ width: '100%', height: '180px', marginTop: '6px' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      {renderCardChart(card)}
+                    </ResponsiveContainer>
+                  </div>
+
+                  {/* Collapsible SQL Pre block */}
+                  {isSqlVisible && (
+                    <pre className="no-print" style={{
+                      backgroundColor: 'rgba(0,0,0,0.3)',
+                      padding: '8px 12px',
+                      borderRadius: '4px',
+                      fontSize: '0.7rem',
+                      fontFamily: 'monospace',
+                      color: 'hsl(var(--text-muted))',
+                      overflowX: 'auto',
+                      border: '1px solid hsl(var(--border))',
+                      marginTop: '8px',
+                      whiteSpace: 'pre-wrap'
+                    }}>{card.sql}</pre>
+                  )}
+                </div>
+              </Rnd>
+            );
+          })}
+        </div>
+      ) : (
+        <div className={`dashboard-grid-canvas ${colClass}`}>
+          {cards.map((card, idx) => {
+            const isSqlVisible = !!showSql[card.id];
+            return (
+              <div key={card.id} className="dashboard-card glass-panel">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
                 <input 
                   type="text" 
@@ -263,7 +610,6 @@ const DashboardCanvas = memo(function DashboardCanvas({
                 />
                 
                 <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }} className="no-print">
-                  {/* Widget reorder controls */}
                   <button className="table-action-btn" title="Move Left / Up" onClick={() => handleMoveCard(idx, -1)} disabled={idx === 0} style={{ opacity: idx === 0 ? 0.3 : 1 }}>
                     <MoveLeft size={10} />
                   </button>
@@ -308,9 +654,8 @@ const DashboardCanvas = memo(function DashboardCanvas({
             </div>
           );
         })}
-      </div>
-    </div>
-  );
+        </div>
+      )}
 });
 
 export default DashboardCanvas;

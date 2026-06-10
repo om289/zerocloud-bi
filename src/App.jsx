@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Database, Table, BarChart2, AlertCircle, FileCode2, Play, LayoutGrid, Terminal, Sparkles } from 'lucide-react';
+import { Database, Table, BarChart2, AlertCircle, FileCode2, Play, LayoutGrid, Terminal, Sparkles, ClipboardList } from 'lucide-react';
 import { initDuckDB, runQuery, getDB, getConn } from './lib/duckdb';
 import FileLoader from './components/FileLoader';
 import SchemaBrowser from './components/SchemaBrowser';
@@ -12,6 +12,7 @@ import SqlSnippets from './components/SqlSnippets';
 import PivotBuilder from './components/PivotBuilder';
 import NlqAssistant from './components/NlqAssistant';
 import DbTerminal from './components/DbTerminal';
+import DataProfiler from './components/DataProfiler';
 
 function App() {
   const [dbReady, setDbReady] = useState(false);
@@ -408,6 +409,14 @@ function App() {
                         <span>Data Table</span>
                       </button>
                       <button 
+                        className={`tab ${activeTab === 'profile' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('profile')}
+                        id="tab-profile"
+                      >
+                        <ClipboardList size={14} />
+                        <span>Data Profile</span>
+                      </button>
+                      <button 
                         className={`tab ${activeTab === 'chart' ? 'active' : ''}`}
                         onClick={() => setActiveTab('chart')}
                         id="tab-chart"
@@ -420,6 +429,8 @@ function App() {
 
                   {activeTab === 'data' ? (
                     <ResultsGrid result={result} />
+                  ) : activeTab === 'profile' ? (
+                    <DataProfiler activeTable={activeTableObj?.name} />
                   ) : (
                     <ChartBuilder result={result} onPinCard={handlePinCard} />
                   )}

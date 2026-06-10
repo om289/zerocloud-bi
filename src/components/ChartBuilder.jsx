@@ -28,30 +28,39 @@ const ChartBuilder = memo(function ChartBuilder({ result, onPinCard }) {
   const columns = result?.columns || [];
   const rows = result?.rows || [];
 
+  // Detect which columns are numeric by sampling the first few rows
+  const numericColumns = useMemo(() => {
+    if (!rows.length || !columns.length) return [];
+    return columns.filter(col => {
+      // Check first 5 rows (or fewer) — if any row has a real number, treat as numeric
+      const sampled = rows.slice(0, Math.min(5, rows.length));
+      return sampled.some(row => {
+        const val = row[col];
+        return val !== null && val !== undefined && val !== '' && !isNaN(Number(val)) && typeof val !== 'boolean';
+      });
+    });
+  }, [rows, columns]);
+
   // Auto-guess columns on load
   useEffect(() => {
     if (columns.length > 0) {
-      setXAxis(columns[0]);
+      // For X-axis, prefer a non-numeric (label) column, fallback to first column
+      const labelCol = columns.find(col => !numericColumns.includes(col)) || columns[0];
+      setXAxis(labelCol);
       
-      // Attempt to find a numeric column to guess Y-Axis
-      const numericCol = columns.find((col, index) => {
-        if (index === 0) return false;
-        const testVal = rows[0]?.[col];
-        return typeof testVal === 'number';
-      });
-      
-      const primaryY = numericCol || columns[Math.min(1, columns.length - 1)];
+      // For Y-axis, pick the first numeric column that isn't the X-axis
+      const primaryY = numericColumns.find(col => col !== labelCol) || numericColumns[0] || '';
       setYAxis(primaryY);
 
-      // Guess secondary Y axis
-      const secondaryY = columns.find(col => col !== columns[0] && col !== primaryY && typeof rows[0]?.[col] === 'number');
-      setYAxis2(secondaryY || '');
+      // Guess secondary Y axis from remaining numeric columns
+      const secondaryY = numericColumns.find(col => col !== labelCol && col !== primaryY) || '';
+      setYAxis2(secondaryY);
     } else {
       setXAxis('');
       setYAxis('');
       setYAxis2('');
     }
-  }, [result]);
+  }, [result, numericColumns]);
 
   const activeTheme = themeColors[colorTheme] || themeColors.violet;
 
@@ -272,7 +281,11 @@ const ChartBuilder = memo(function ChartBuilder({ result, onPinCard }) {
             onChange={(e) => setYAxis(e.target.value)}
             id="select-yaxis"
           >
-            {columns.map(col => <option key={col} value={col}>{col}</option>)}
+            {numericColumns.length > 0 ? (
+              numericColumns.map(col => <option key={col} value={col}>{col}</option>)
+            ) : (
+              columns.map(col => <option key={col} value={col}>{col}</option>)
+            )}
           </select>
         </div>
 
@@ -296,7 +309,7 @@ const ChartBuilder = memo(function ChartBuilder({ result, onPinCard }) {
                 style={{ marginTop: '4px' }}
               >
                 <option value="">-- Select Axis 2 --</option>
-                {columns.filter(c => c !== xAxis).map(col => <option key={col} value={col}>{col}</option>)}
+                {(numericColumns.length > 0 ? numericColumns : columns).filter(c => c !== xAxis).map(col => <option key={col} value={col}>{col}</option>)}
               </select>
             )}
           </div>

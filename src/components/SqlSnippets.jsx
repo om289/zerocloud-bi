@@ -1,5 +1,5 @@
 import React, { useState, useEffect, memo } from 'react';
-import { Copy, Plus, X } from 'lucide-react';
+import { Copy, Plus, X, Trash2, Heart } from 'lucide-react';
 
 const SqlSnippets = memo(function SqlSnippets({ activeTable, columns, onInjectQuery, onClose }) {
   const table = activeTable || 'your_table';
@@ -8,6 +8,13 @@ const SqlSnippets = memo(function SqlSnippets({ activeTable, columns, onInjectQu
   const [selectedDateCol, setSelectedDateCol] = useState('');
   const [selectedNumCol, setSelectedNumCol] = useState('');
   const [selectedGroupCol, setSelectedGroupCol] = useState('');
+
+  // States for custom snippet builder
+  const [customSnippets, setCustomSnippets] = useState([]);
+  const [newTitle, setNewTitle] = useState('');
+  const [newDesc, setNewDesc] = useState('');
+  const [newSql, setNewSql] = useState('');
+  const [showAddForm, setShowAddForm] = useState(false);
 
   // Initial guesses on load or table change
   useEffect(() => {
@@ -45,11 +52,23 @@ const SqlSnippets = memo(function SqlSnippets({ activeTable, columns, onInjectQu
     }
   }, [columns]);
 
+  // Load custom snippets on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('duckdb_custom_snippets');
+    if (saved) {
+      try {
+        setCustomSnippets(JSON.parse(saved));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }, []);
+
   const dateCol = selectedDateCol || 'date_column';
   const numericCol = selectedNumCol || 'numeric_column';
   const groupCol = selectedGroupCol || 'category_column';
 
-  const snippets = [
+  const defaultSnippets = [
     {
       title: "Cumulative Sum (Running Total)",
       description: "Calculates the running sum of a numeric column ordered by date.",
@@ -79,6 +98,34 @@ const SqlSnippets = memo(function SqlSnippets({ activeTable, columns, onInjectQu
 
   const handleCopy = (sql) => {
     navigator.clipboard.writeText(sql);
+  };
+
+  const handleSaveCustomSnippet = (e) => {
+    e.preventDefault();
+    if (!newTitle.trim() || !newSql.trim()) return;
+
+    const newSnippet = {
+      id: Date.now(),
+      title: newTitle,
+      description: newDesc,
+      sql: newSql
+    };
+
+    const updated = [newSnippet, ...customSnippets];
+    setCustomSnippets(updated);
+    localStorage.setItem('duckdb_custom_snippets', JSON.stringify(updated));
+
+    // Reset Form
+    setNewTitle('');
+    setNewDesc('');
+    setNewSql('');
+    setShowAddForm(false);
+  };
+
+  const handleDeleteCustomSnippet = (id) => {
+    const updated = customSnippets.filter(s => s.id !== id);
+    setCustomSnippets(updated);
+    localStorage.setItem('duckdb_custom_snippets', JSON.stringify(updated));
   };
 
   return (
@@ -124,7 +171,103 @@ const SqlSnippets = memo(function SqlSnippets({ activeTable, columns, onInjectQu
       </div>
 
       <div className="snippets-content">
-        {snippets.map((item, idx) => (
+        {/* Custom Snippets Manager Toggle */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'hsl(var(--accent-secondary))' }}>Custom Templates</span>
+          <button 
+            className="table-action-btn" 
+            style={{ fontSize: '0.7rem', padding: '2px 6px', display: 'flex', gap: '3px', alignItems: 'center' }}
+            onClick={() => setShowAddForm(!showAddForm)}
+          >
+            <Plus size={10} />
+            <span>{showAddForm ? 'Cancel' : 'New'}</span>
+          </button>
+        </div>
+
+        {/* Custom Snippet Add Form */}
+        {showAddForm && (
+          <form onSubmit={handleSaveCustomSnippet} style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', border: '1px dashed hsl(var(--border))', borderRadius: '6px', backgroundColor: 'rgba(0,0,0,0.1)' }}>
+            <input 
+              type="text" 
+              placeholder="Template Name" 
+              className="form-select" 
+              style={{ fontSize: '0.75rem', padding: '4px 6px', height: '28px', backgroundColor: 'hsl(var(--bg-main))' }}
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              required
+            />
+            <input 
+              type="text" 
+              placeholder="Description" 
+              className="form-select" 
+              style={{ fontSize: '0.75rem', padding: '4px 6px', height: '28px', backgroundColor: 'hsl(var(--bg-main))' }}
+              value={newDesc}
+              onChange={(e) => setNewDesc(e.target.value)}
+            />
+            <textarea 
+              placeholder="SQL Statement" 
+              className="form-select" 
+              style={{ fontSize: '0.75rem', padding: '6px', height: '60px', resize: 'none', backgroundColor: 'hsl(var(--bg-main))', fontFamily: 'monospace' }}
+              value={newSql}
+              onChange={(e) => setNewSql(e.target.value)}
+              required
+            />
+            <button type="submit" className="btn-run" style={{ fontSize: '0.75rem', height: '26px', justifyContent: 'center', boxShadow: 'none' }}>
+              Save Snippet
+            </button>
+          </form>
+        )}
+
+        {/* Render Custom Snippets */}
+        {customSnippets.map((item) => (
+          <div key={item.id} className="snippet-card" style={{ borderLeft: '3px solid hsl(var(--accent-secondary))' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <h4 style={{ fontSize: '0.85rem', color: 'hsl(var(--text-main))', fontWeight: 600, fontFamily: 'Outfit', display: 'flex', gap: '4px', alignItems: 'center' }}>
+                <Heart size={10} fill="hsl(var(--accent-secondary))" stroke="none" />
+                <span>{item.title}</span>
+              </h4>
+              <button 
+                className="table-action-btn" 
+                onClick={() => handleDeleteCustomSnippet(item.id)}
+                style={{ color: 'hsl(var(--error))', padding: '2px' }}
+              >
+                <Trash2 size={10} />
+              </button>
+            </div>
+            {item.description && (
+              <p style={{ fontSize: '0.75rem', color: 'hsl(var(--text-muted))', margin: '4px 0 8px 0' }}>
+                {item.description}
+              </p>
+            )}
+            
+            <pre className="snippet-code-block">{item.sql}</pre>
+
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}>
+              <button 
+                className="btn-outline" 
+                style={{ padding: '4px 8px', fontSize: '0.7rem', height: '24px' }}
+                onClick={() => handleCopy(item.sql)}
+              >
+                <Copy size={10} />
+                <span>Copy</span>
+              </button>
+              
+              <button 
+                className="btn-run" 
+                style={{ padding: '4px 8px', fontSize: '0.7rem', height: '24px', boxShadow: 'none' }}
+                onClick={() => onInjectQuery(item.sql)}
+              >
+                <Plus size={10} />
+                <span>Inject</span>
+              </button>
+            </div>
+          </div>
+        ))}
+
+        <div style={{ height: '1px', backgroundColor: 'hsl(var(--border))', margin: '8px 0' }} />
+        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'hsl(var(--accent))' }}>Default Analytical Snippets</span>
+
+        {defaultSnippets.map((item, idx) => (
           <div key={idx} className="snippet-card">
             <h4 style={{ fontSize: '0.85rem', color: 'hsl(var(--text-main))', fontWeight: 600, fontFamily: 'Outfit' }}>
               {item.title}
