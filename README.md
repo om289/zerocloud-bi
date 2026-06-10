@@ -10,9 +10,11 @@ DuckBoard is a fully offline-first, high-performance Business Intelligence (BI) 
 * **Wasm SQL Engine**: Runs a compiled instance of DuckDB in the browser, providing full SQL compliance (Common Table Expressions, window functions, complex aggregates).
 * **Multi-Threaded Execution**: Relies on Web Workers to execute queries in a background thread, keeping the user interface completely fluid.
 * **Interactive Visualization Suite**: Build charts (Bar, Line, Area, and Pie) dynamically from query results using a drag-and-drop selector powered by Recharts.
-* **Relational Schema Inspector**: Inspect columns, data types, and primary attributes dynamically as tables are loaded.
-* **Query Persistence**: Remembers your SQL query history locally using local browser storage for easy workspace retrieval.
-* **Export Utilities**: Export customized SQL query result sets directly back to your computer as clean CSV files.
+* **Relational Schema Inspector & Search**: Inspect columns, data types, and attributes dynamically as tables are loaded, with built-in table name search filtering.
+* **Query Persistence & Formatting**: Remembers your SQL query history locally, alongside built-in physical plan EXPLAIN analysis and a structured SQL pretty-printer formatter.
+* **Export Utilities**: Export customized SQL query result sets directly back to your computer as clean CSV or JSON files using local Blob objects.
+* **Visual Query Builder**: Build queries visually with support for multi-table joins (including joins on previously joined columns), safe identifier escaping, aggregations, filters, sorting, and calculated fields.
+* **Dual Dashboard Layouts**: Toggle between a standard responsive grid layout and an interactive, draggable floating widget mode.
 
 ---
 
