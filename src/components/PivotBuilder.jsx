@@ -102,6 +102,62 @@ const PivotBuilder = memo(function PivotBuilder({ activeTable, columns }) {
     }
   };
 
+  const pivotTotals = useMemo(() => {
+    if (!pivotData || !rows.length) return null;
+
+    // Identify which columns of pivotData.columns are value columns (not row headers)
+    const valueCols = pivotData.columns.filter(col => !rows.includes(col));
+
+    // Calculate row totals
+    const rowTotals = pivotData.rows.map(row => {
+      let sum = 0;
+      let count = 0;
+      valueCols.forEach(col => {
+        const val = Number(row[col]);
+        if (!isNaN(val) && row[col] !== null) {
+          sum += val;
+          count++;
+        }
+      });
+      return { sum, avg: count > 0 ? sum / count : 0 };
+    });
+
+    // Calculate column totals
+    const colTotals = {};
+    valueCols.forEach(col => {
+      let sum = 0;
+      let count = 0;
+      pivotData.rows.forEach(row => {
+        const val = Number(row[col]);
+        if (!isNaN(val) && row[col] !== null) {
+          sum += val;
+          count++;
+        }
+      });
+      colTotals[col] = { sum, avg: count > 0 ? sum / count : 0 };
+    });
+
+    // Calculate grand-grand total
+    let grandSum = 0;
+    let grandCount = 0;
+    pivotData.rows.forEach(row => {
+      valueCols.forEach(col => {
+        const val = Number(row[col]);
+        if (!isNaN(val) && row[col] !== null) {
+          grandSum += val;
+          grandCount++;
+        }
+      });
+    });
+
+    return {
+      valueCols,
+      rowTotals,
+      colTotals,
+      grandTotal: { sum: grandSum, avg: grandCount > 0 ? grandSum / grandCount : 0 }
+    };
+  }, [pivotData, rows]);
+
   const addRowField = (field) => {
     if (field && !rows.includes(field)) {
       setRows(prev => [...prev, field]);
@@ -249,6 +305,7 @@ const PivotBuilder = memo(function PivotBuilder({ activeTable, columns }) {
                   {pivotData.columns.map(col => (
                     <th key={col}>{col}</th>
                   ))}
+                  <th className="pivot-col-total" style={{ borderLeft: '2px solid hsl(var(--border))', fontWeight: 'bold' }}>Grand Total</th>
                 </tr>
               </thead>
               <tbody>
@@ -272,8 +329,34 @@ const PivotBuilder = memo(function PivotBuilder({ activeTable, columns }) {
                         </td>
                       );
                     })}
+                    <td className="pivot-col-total" style={{ fontWeight: 'bold', borderLeft: '2px solid hsl(var(--border))' }}>
+                      {pivotTotals?.rowTotals[idx]?.sum.toLocaleString() || 0}
+                    </td>
                   </tr>
                 ))}
+
+                {pivotTotals && (
+                  <tr style={{ borderTop: '2px solid hsl(var(--border))', fontWeight: 'bold', backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                    {pivotData.columns.map((col, idx) => {
+                      const isRowHeader = rows.includes(col);
+                      if (isRowHeader) {
+                        return (
+                          <td key={col} className="pivot-row-header" style={{ fontWeight: 'bold' }}>
+                            {idx === 0 ? 'Grand Total' : ''}
+                          </td>
+                        );
+                      }
+                      return (
+                        <td key={col} className="pivot-col-total">
+                          {pivotTotals.colTotals[col]?.sum.toLocaleString() || 0}
+                        </td>
+                      );
+                    })}
+                    <td className="pivot-col-total" style={{ borderLeft: '2px solid hsl(var(--border))', color: 'hsl(var(--accent-secondary))' }}>
+                      {pivotTotals.grandTotal.sum.toLocaleString()}
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
