@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect, memo } from 'react';
 import { Rnd } from 'react-rnd';
 import { ResponsiveContainer, BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
-import { Trash2, Code, Printer, LayoutGrid, Download, MoveLeft, MoveRight, HardDriveDownload, HardDriveUpload, Filter, RefreshCw, Maximize2, CornerDownLeft, CornerDownRight, CornerUpLeft, CornerUpRight } from 'lucide-react';
+import { Trash2, Code, Printer, LayoutGrid, Download, MoveLeft, MoveRight, HardDriveDownload, HardDriveUpload, Filter, RefreshCw, Maximize2, CornerDownLeft, CornerDownRight, CornerUpLeft, CornerUpRight, Sparkles } from 'lucide-react';
 import { runQuery } from '../lib/duckdb';
 
 const clientSideFilter = (rows, filter) => {
@@ -360,6 +360,121 @@ const DashboardCanvas = memo(function DashboardCanvas({
     }));
   };
 
+  const handleAutoInsights = async () => {
+    if (!activeTable || !dbReady) return;
+    
+    const columns = activeTable.columns;
+    
+    const isNumericType = (type) => {
+      const t = type.toUpperCase();
+      return t.includes('INT') || t.includes('DOUBLE') || t.includes('FLOAT') || t.includes('DECIMAL') || t.includes('NUMERIC') || t.includes('REAL');
+    };
+    
+    const isDateType = (name, type) => {
+      const n = name.toLowerCase();
+      const t = type.toUpperCase();
+      return t.includes('DATE') || t.includes('TIME') || t.includes('TIMESTAMP') || n.includes('date') || n.includes('year') || n.includes('month');
+    };
+    
+    const isCategoricalType = (type) => {
+      const t = type.toUpperCase();
+      return t.includes('VARCHAR') || t.includes('TEXT') || t.includes('CHAR') || t.includes('STRING');
+    };
+
+    const numCols = columns.filter(c => isNumericType(c.type)).map(c => c.name);
+    const dateCols = columns.filter(c => isDateType(c.name, c.type)).map(c => c.name);
+    const catCols = columns.filter(c => isCategoricalType(c.type) && !isDateType(c.name, c.type)).map(c => c.name);
+    
+    const fallbackNum = numCols[0] || (columns[0] ? columns[0].name : '');
+    const fallbackCat = catCols[0] || (columns[0] ? columns[0].name : '');
+    const fallbackDate = dateCols[0] || '';
+
+    const newCards = [];
+    let idCounter = Date.now();
+
+    try {
+      // 1. Bar Chart: Top 10 values by Category
+      if (fallbackCat && fallbackNum) {
+        const sql = `SELECT "${fallbackCat}", SUM("${fallbackNum}") AS "total_${fallbackNum}" FROM "${activeTable.name}" GROUP BY 1 ORDER BY 2 DESC LIMIT 10;`;
+        const res = await runQuery(sql);
+        if (res.success && res.rows.length > 0) {
+          newCards.push({
+            id: idCounter++,
+            title: `Top ${fallbackCat} by Total ${fallbackNum}`,
+            chartType: 'bar',
+            xAxis: fallbackCat,
+            yAxis: `total_${fallbackNum}`,
+            colorTheme: 'violet',
+            rows: res.rows,
+            sql
+          });
+        }
+      }
+
+      // 2. Pie Chart: Record Count Distribution
+      if (fallbackCat) {
+        const sql = `SELECT "${fallbackCat}", COUNT(*) AS "record_count" FROM "${activeTable.name}" GROUP BY 1 ORDER BY 2 DESC LIMIT 6;`;
+        const res = await runQuery(sql);
+        if (res.success && res.rows.length > 0) {
+          newCards.push({
+            id: idCounter++,
+            title: `Record Distribution by ${fallbackCat}`,
+            chartType: 'pie',
+            xAxis: fallbackCat,
+            yAxis: 'record_count',
+            colorTheme: 'cyan',
+            rows: res.rows,
+            sql
+          });
+        }
+      }
+
+      // 3. Line Chart: Trend Over Time
+      if (fallbackDate && fallbackNum) {
+        const sql = `SELECT "${fallbackDate}", SUM("${fallbackNum}") AS "daily_${fallbackNum}" FROM "${activeTable.name}" GROUP BY 1 ORDER BY 1 LIMIT 50;`;
+        const res = await runQuery(sql);
+        if (res.success && res.rows.length > 0) {
+          newCards.push({
+            id: idCounter++,
+            title: `${fallbackNum} Trend Over Time`,
+            chartType: 'line',
+            xAxis: fallbackDate,
+            yAxis: `daily_${fallbackNum}`,
+            colorTheme: 'green',
+            rows: res.rows,
+            sql
+          });
+        }
+      }
+
+      // 4. Area Chart: Frequency Distribution
+      if (fallbackNum) {
+        const sql = `SELECT "${fallbackNum}", COUNT(*) AS "frequency" FROM "${activeTable.name}" GROUP BY 1 ORDER BY 1 LIMIT 30;`;
+        const res = await runQuery(sql);
+        if (res.success && res.rows.length > 0) {
+          newCards.push({
+            id: idCounter++,
+            title: `Frequency Distribution of ${fallbackNum}`,
+            chartType: 'area',
+            xAxis: fallbackNum,
+            yAxis: 'frequency',
+            colorTheme: 'amber',
+            rows: res.rows,
+            sql
+          });
+        }
+      }
+
+      if (newCards.length > 0) {
+        onReorderCards([...cards, ...newCards]);
+      } else {
+        alert("Could not generate recommendations from this table's schema.");
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const cornerPositions = {
     'top-left': { x: 20, y: 120 },
     'top-right': { x: window.innerWidth - 420, y: 120 },
@@ -377,6 +492,17 @@ const DashboardCanvas = memo(function DashboardCanvas({
         </div>
         
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          {activeTable && (
+            <button 
+              className="btn-outline" 
+              onClick={handleAutoInsights}
+              title="Automatically generate recommendations based on table schema"
+              style={{ padding: '6px 12px', borderColor: 'hsla(var(--accent-secondary), 0.4)', color: 'hsl(var(--accent-secondary))', backgroundColor: 'hsla(var(--accent-secondary), 0.05)' }}
+            >
+              <Sparkles size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+              <span>Smart Insights</span>
+            </button>
+          )}
           {!floatingMode && (
             <div style={{ display: 'flex', border: '1px solid hsl(var(--border))', borderRadius: '6px', overflow: 'hidden' }}>
               <button className={`btn-outline ${colsLayout === 1 ? 'active' : ''}`} style={{ border: 'none', padding: '6px 10px', borderRadius: 0 }} onClick={() => setColsLayout(1)}>1 Col</button>
