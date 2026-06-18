@@ -213,6 +213,18 @@ const DashboardCanvas = memo(function DashboardCanvas({
     setFilterVal('');
   };
 
+  const handleChartClick = (columnName, value) => {
+    if (!columnName || value === undefined || value === null) return;
+    setFilterCol(columnName);
+    setFilterOp('=');
+    setFilterVal(String(value));
+    setActiveGlobalFilter({
+      column: columnName,
+      operator: '=',
+      value: String(value)
+    });
+  };
+
   // Pre-process and apply global filters to cards data rows
   const getFilteredCardRows = (card) => {
     if (!activeGlobalFilter) return card.rows;
@@ -243,7 +255,7 @@ const DashboardCanvas = memo(function DashboardCanvas({
     switch (chartType) {
       case 'line':
         return (
-          <LineChart {...commonProps}>
+          <LineChart {...commonProps} onClick={(state) => { if (state && state.activeLabel) handleChartClick(xAxis, state.activeLabel); }} style={{ cursor: 'pointer' }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
             <XAxis dataKey={xAxis} stroke="hsl(var(--text-dark))" fontSize={9} tickLine={false} />
             <YAxis yAxisId="left" stroke="hsl(var(--text-dark))" fontSize={9} tickLine={false} />
@@ -255,7 +267,7 @@ const DashboardCanvas = memo(function DashboardCanvas({
         );
       case 'area':
         return (
-          <AreaChart {...commonProps}>
+          <AreaChart {...commonProps} onClick={(state) => { if (state && state.activeLabel) handleChartClick(xAxis, state.activeLabel); }} style={{ cursor: 'pointer' }}>
             <XAxis dataKey={xAxis} stroke="hsl(var(--text-dark))" fontSize={9} tickLine={false} />
             <YAxis stroke="hsl(var(--text-dark))" fontSize={9} tickLine={false} />
             <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--bg-card))', border: '1px solid hsl(var(--border))' }} />
@@ -265,7 +277,7 @@ const DashboardCanvas = memo(function DashboardCanvas({
       case 'pie':
         const pieData = rows.slice(0, 10);
         return (
-          <PieChart>
+          <PieChart style={{ cursor: 'pointer' }}>
             <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--bg-card))', border: '1px solid hsl(var(--border))' }} />
             <Pie
               data={pieData}
@@ -275,6 +287,12 @@ const DashboardCanvas = memo(function DashboardCanvas({
               fill="#8b5cf6"
               dataKey={yAxis}
               nameKey={xAxis}
+              onClick={(data) => {
+                if (data) {
+                  const val = data.name || data.payload?.[xAxis] || data.payload?.name;
+                  if (val !== undefined) handleChartClick(xAxis, val);
+                }
+              }}
             >
               {pieData.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
@@ -285,7 +303,7 @@ const DashboardCanvas = memo(function DashboardCanvas({
       case 'bar':
       default:
         return (
-          <BarChart {...commonProps}>
+          <BarChart {...commonProps} onClick={(state) => { if (state && state.activeLabel) handleChartClick(xAxis, state.activeLabel); }} style={{ cursor: 'pointer' }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
             <XAxis dataKey={xAxis} stroke="hsl(var(--text-dark))" fontSize={9} tickLine={false} />
             <YAxis yAxisId="left" stroke="hsl(var(--text-dark))" fontSize={9} tickLine={false} />
