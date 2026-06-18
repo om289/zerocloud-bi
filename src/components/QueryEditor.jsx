@@ -1,6 +1,136 @@
-import React, { useState, useEffect, useRef, memo } from 'react';
+import React, { useState, useEffect, useRef, memo, useMemo } from 'react';
 import { Play, RotateCcw, Clock, Database, History, HelpCircle, Code } from 'lucide-react';
 import { runQuery } from '../lib/duckdb';
+
+const VisualExplainPlan = ({ planText }) => {
+  const blocks = useMemo(() => {
+    if (!planText) return [];
+    const lines = planText.split('\n');
+    const items = [];
+    let currentBlock = [];
+    let inBox = false;
+
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (line.includes('┌') || line.includes('╔') || (trimmed.startsWith('+-') && trimmed.endsWith('-+'))) {
+        inBox = true;
+        if (currentBlock.length > 0) {
+          items.push({ type: 'text', content: currentBlock.join('\n') });
+          currentBlock = [];
+        }
+      } else if (line.includes('└') || line.includes('╚') || (inBox && trimmed.startsWith('+-') && trimmed.endsWith('-+'))) {
+        inBox = false;
+        items.push({ type: 'node', content: currentBlock });
+        currentBlock = [];
+      } else {
+        if (inBox) {
+          // Clean the box characters
+          const cleanLine = line.replace(/[│┃║]/g, '').trim();
+          if (cleanLine) {
+            currentBlock.push(cleanLine);
+          }
+        } else {
+          if (trimmed) {
+            items.push({ type: 'connector', text: trimmed });
+          }
+        }
+      }
+    });
+
+    if (currentBlock.length > 0) {
+      items.push({ type: inBox ? 'node' : 'text', content: currentBlock });
+    }
+
+    return items;
+  }, [planText]);
+
+  if (blocks.length === 0) return null;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '16px', backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: '8px', border: '1px solid hsl(var(--border))', overflowX: 'auto', maxHeight: '400px' }}>
+      {blocks.map((block, idx) => {
+        if (block.type === 'node') {
+          const title = block.content[0] || 'OPERATOR';
+          const details = block.content.slice(1);
+          
+          let headerColor = 'linear-gradient(135deg, #3b82f6, #1d4ed8)'; // default blue
+          if (title.includes('SCAN')) headerColor = 'linear-gradient(135deg, #10b981, #047857)'; // green
+          if (title.includes('FILTER')) headerColor = 'linear-gradient(135deg, #f59e0b, #b45309)'; // amber
+          if (title.includes('JOIN')) headerColor = 'linear-gradient(135deg, #ef4444, #b91c1c)'; // red
+          if (title.includes('AGGREGATE') || title.includes('GROUP') || title.includes('SUMMARIZE')) headerColor = 'linear-gradient(135deg, #8b5cf6, #6d28d9)'; // purple
+
+          return (
+            <div key={idx} className="explain-node-card" style={{
+              width: '280px',
+              backgroundColor: 'hsl(var(--bg-card))',
+              border: '1px solid hsl(var(--border))',
+              borderRadius: '6px',
+              overflow: 'hidden',
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+            }}>
+              <div style={{
+                background: headerColor,
+                padding: '6px 12px',
+                fontSize: '0.75rem',
+                fontWeight: 'bold',
+                color: '#fff',
+                fontFamily: 'Outfit',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                textAlign: 'center'
+              }}>
+                {title}
+              </div>
+              {details.length > 0 && (
+                <div style={{
+                  padding: '8px 12px',
+                  fontSize: '0.68rem',
+                  fontFamily: 'monospace',
+                  color: 'hsl(var(--text-muted))',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '4px',
+                  maxHeight: '120px',
+                  overflowY: 'auto'
+                }}>
+                  {details.map((d, i) => (
+                    <div key={i} style={{ borderBottom: i < details.length - 1 ? '1px dashed rgba(255,255,255,0.03)' : 'none', paddingBottom: '2px', whiteSpace: 'pre-wrap' }}>{d}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        } else if (block.type === 'connector') {
+          return (
+            <div key={idx} style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              color: 'hsl(var(--accent-secondary))',
+              fontSize: '1rem',
+              fontWeight: 'bold',
+              margin: '2px 0'
+            }}>
+              {block.text === '│' || block.text === '┃' || block.text === '║' ? '↓' : block.text}
+            </div>
+          );
+        } else {
+          return (
+            <pre key={idx} style={{
+              fontSize: '0.7rem',
+              color: 'hsl(var(--text-muted))',
+              margin: 0,
+              padding: '4px',
+              fontFamily: 'monospace'
+            }}>
+              {block.content}
+            </pre>
+          );
+        }
+      })}
+    </div>
+  );
+};
 
 const QueryEditor = memo(function QueryEditor({ query, setQuery, onRunQuery, isRunning, lastExecutionResult, activeTable, columns = [] }) {
   const [history, setHistory] = useState([]);
@@ -352,9 +482,9 @@ const QueryEditor = memo(function QueryEditor({ query, setQuery, onRunQuery, isR
 
         {/* Explain profiling plan results overlay/panel */}
         {explainPlan && (
-          <div className="explain-plan-container no-print">
+          <div className="explain-plan-container no-print" style={{ maxHeight: '420px', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid hsl(var(--border))', paddingBottom: '4px', marginBottom: '8px' }}>
-              <span style={{ color: 'hsl(var(--accent-secondary))', fontWeight: 600, fontSize: '0.75rem' }}>Physical Query Plan</span>
+              <span style={{ color: 'hsl(var(--accent-secondary))', fontWeight: 600, fontSize: '0.75rem' }}>Visual Execution Plan</span>
               <button 
                 onClick={() => setExplainPlan(null)}
                 style={{ background: 'none', border: 'none', color: 'hsl(var(--text-muted))', cursor: 'pointer', fontSize: '0.7rem' }}
@@ -362,7 +492,7 @@ const QueryEditor = memo(function QueryEditor({ query, setQuery, onRunQuery, isR
                 Hide
               </button>
             </div>
-            <pre style={{ margin: 0, whiteSpace: 'pre-wrap', lineHeight: 1.4, color: '#a7b5eb' }}>{explainPlan}</pre>
+            <VisualExplainPlan planText={explainPlan} />
           </div>
         )}
 
