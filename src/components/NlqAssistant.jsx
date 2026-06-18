@@ -1,5 +1,5 @@
-import React, { useState, memo } from 'react';
-import { Sparkles, ArrowRight, Play, FileCode, Clock, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, memo } from 'react';
+import { Sparkles, ArrowRight, Play, FileCode, Clock, Trash2, Settings } from 'lucide-react';
 
 const NlqAssistant = memo(function NlqAssistant({ activeTable, columns, onRunQuery }) {
   const [inputText, setInputText] = useState('');
@@ -7,6 +7,24 @@ const NlqAssistant = memo(function NlqAssistant({ activeTable, columns, onRunQue
   const [explanations, setExplanations] = useState([]);
   const [queryHistory, setQueryHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
+
+  // Gemini API states
+  const [apiKey, setApiKey] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  // Load API key from local storage on mount
+  useEffect(() => {
+    const savedKey = localStorage.getItem('gemini_api_key');
+    if (savedKey) {
+      setApiKey(savedKey);
+    }
+  }, []);
+
+  const saveApiKey = (key) => {
+    setApiKey(key);
+    localStorage.setItem('gemini_api_key', key);
+  };
 
   // Helper to compute edit distance locally
   const getLevenshteinDistance = (a, b) => {
@@ -28,22 +46,89 @@ const NlqAssistant = memo(function NlqAssistant({ activeTable, columns, onRunQue
     return tmp[alen][blen];
   };
 
-  const handleTranslate = () => {
+  const handleTranslate = async () => {
     if (!inputText.trim() || !activeTable) return;
 
+    if (apiKey.trim()) {
+      setLoading(true);
+      setExplanations(["Sending request to Gemini model for schema-aware SQL translation..."]);
+      setCompiledSql('');
+      
+      const schemaDescription = columns.map(c => `"${c.name}" (${c.type})`).join(', ');
+      const prompt = `You are a professional text-to-SQL compiler translating natural queries to DuckDB SQL.
+Active Table Name: "${activeTable}"
+Columns & Types: ${schemaDescription}
+
+User Request: "${inputText}"
+
+Generate a single valid DuckDB SQL query. Follow these rules strictly:
+1. Output ONLY the raw SQL statement.
+2. Do NOT wrap it in markdown code blocks (\`\`\`sql).
+3. Do NOT explain the query or output anything else.
+4. Ensure all table and column names match the schema exactly.
+5. Limit the results to a maximum of 100 rows unless specified otherwise.`;
+
+      try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }]
+          })
+        });
+
+        const data = await response.json();
+        if (response.ok) {
+          let sql = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          sql = sql.trim().replace(/^```sql\s*/i, '').replace(/```$/, '').trim();
+          
+          setCompiledSql(sql);
+          setExplanations([
+            `Gemini AI translation successful.`,
+            `Model used: gemini-2.5-flash`,
+            `Context schema: "${activeTable}" (${columns.length} columns)`
+          ]);
+          
+          setQueryHistory(prev => {
+            const entry = { id: Date.now(), naturalText: inputText, sql, timestamp: new Date().toLocaleTimeString() };
+            return [entry, ...prev].slice(0, 20);
+          });
+        } else {
+          const errMessage = data.error?.message || JSON.stringify(data);
+          throw new Error(errMessage);
+        }
+      } catch (err) {
+        console.error(err);
+        setExplanations([
+          `Gemini API Error: ${err.message}`,
+          `Falling back to local heuristic translation...`
+        ]);
+        runLocalHeuristics();
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      runLocalHeuristics();
+    }
+  };
+
+  const runLocalHeuristics = () => {
     let query = inputText.toLowerCase().trim();
-    const explanationList = [];
+    const explanationList = [
+      "Using local offline heuristic engine.",
+      "Enter a Gemini API Key in the settings toggle to activate advanced AI translations."
+    ];
 
     // Local spelling autocorrect mapping columns
     const queryWords = query.split(/[\s,()=+\-*/]+/);
     queryWords.forEach(word => {
       if (word.length < 3) return;
-      // Skip common SQL syntax words
       if (['show', 'select', 'from', 'where', 'group', 'order', 'limit', 'count', 'sum', 'average', 'avg', 'min', 'max', 'by', 'and', 'or', 'not', 'the', 'all', 'each', 'for', 'with', 'grouped', 'sorted'].includes(word)) return;
 
-      // Find closest column name matching within Levenshtein edit distance <= 2
       let closestCol = null;
-      let minDistance = 3; // threshold of max 2 corrections
+      let minDistance = 3;
 
       columns.forEach(col => {
         const colNameLower = col.name.toLowerCase();
@@ -55,7 +140,6 @@ const NlqAssistant = memo(function NlqAssistant({ activeTable, columns, onRunQue
       });
 
       if (closestCol && closestCol.toLowerCase() !== word) {
-        // Replace misspelled word with exact column name
         const regex = new RegExp(`\\b${word}\\b`, 'g');
         query = query.replace(regex, closestCol.toLowerCase());
         explanationList.push(`Autocorrected spelling: "${word}" → "${closestCol}"`);
@@ -86,12 +170,10 @@ const NlqAssistant = memo(function NlqAssistant({ activeTable, columns, onRunQue
     else if (maxTriggers.some(t => query.includes(t))) matchedAgg = 'MAX';
     else if (minTriggers.some(t => query.includes(t))) matchedAgg = 'MIN';
 
-    // Try to find target column for aggregation
     if (matchedAgg) {
       isAggregated = true;
       aggFunction = matchedAgg;
 
-      // Look for a numeric column mentioned near the agg trigger
       const numericCol = columns.find(c =>
         query.includes(c.name.toLowerCase()) &&
         (c.type.includes('INT') || c.type.includes('DOUBLE') || c.type.includes('FLOAT') || c.type.includes('NUMERIC'))
@@ -101,13 +183,11 @@ const NlqAssistant = memo(function NlqAssistant({ activeTable, columns, onRunQue
         aggColumn = numericCol.name;
         explanationList.push(`Detected aggregation: ${matchedAgg} of column "${numericCol.name}"`);
       } else {
-        // Fallback
         aggColumn = '*';
         explanationList.push(`Detected aggregation: ${matchedAgg} (defaulted to count rows)`);
       }
     }
 
-    // 2. Identify dimensions & columns mentioned in query
     const mentionedColumns = columns.filter(col => {
       const colNameLower = col.name.toLowerCase();
       return query.includes(colNameLower);
@@ -133,7 +213,6 @@ const NlqAssistant = memo(function NlqAssistant({ activeTable, columns, onRunQue
       if (query.includes(colNameLower)) {
         let filterAdded = false;
 
-        // Try regex match for "is", "=", "equals"
         const matchIs = query.match(new RegExp(`${colNameLower}\\s+(?:is|=|equals)\\s+['"]?([a-zA-Z0-9_\\s\\.-]+)['"]?`, 'i'));
         if (matchIs && matchIs[1]) {
           const val = matchIs[1].trim();
@@ -222,10 +301,9 @@ const NlqAssistant = memo(function NlqAssistant({ activeTable, columns, onRunQue
     setCompiledSql(sql);
     setExplanations(explanationList);
 
-    // Add to history
     setQueryHistory(prev => {
       const entry = { id: Date.now(), naturalText: inputText, sql, timestamp: new Date().toLocaleTimeString() };
-      return [entry, ...prev].slice(0, 20); // Keep last 20
+      return [entry, ...prev].slice(0, 20);
     });
   };
 
@@ -259,9 +337,17 @@ const NlqAssistant = memo(function NlqAssistant({ activeTable, columns, onRunQue
             if (e.key === 'Enter') handleTranslate();
           }}
         />
-        <button className="btn-run" onClick={handleTranslate} style={{ height: '34px', padding: '0 16px' }} id="btn-translate-nlq">
-          <span>Analyze</span>
+        <button className="btn-run" onClick={handleTranslate} style={{ height: '34px', padding: '0 16px' }} id="btn-translate-nlq" disabled={loading}>
+          <span>{loading ? "Translating..." : "Analyze"}</span>
           <ArrowRight size={14} />
+        </button>
+        <button
+          className={`btn-outline ${showSettings ? 'active' : ''}`}
+          onClick={() => setShowSettings(!showSettings)}
+          style={{ height: '34px', padding: '0 10px', flexShrink: 0 }}
+          title="Gemini API key settings"
+        >
+          <Settings size={14} />
         </button>
         <button
           className="btn-outline"
@@ -280,6 +366,44 @@ const NlqAssistant = memo(function NlqAssistant({ activeTable, columns, onRunQue
           )}
         </button>
       </div>
+
+      {showSettings && (
+        <div className="glass-panel" style={{
+          padding: '16px',
+          border: '1px dashed hsl(var(--border))',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '10px',
+          backgroundColor: 'rgba(0,0,0,0.15)',
+          animation: 'fadeIn var(--transition-normal)'
+        }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'hsl(var(--text-muted))' }}>Gemini API Key</label>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input 
+                type="password" 
+                placeholder="Enter Gemini API Key..."
+                className="form-select"
+                value={apiKey}
+                onChange={(e) => saveApiKey(e.target.value)}
+                style={{ flex: 1, height: '30px', padding: '4px 8px', fontSize: '0.75rem', backgroundColor: 'hsl(var(--bg-main))' }}
+              />
+              {apiKey && (
+                <button 
+                  className="table-action-btn"
+                  onClick={() => saveApiKey('')}
+                  style={{ color: 'hsl(var(--error))', fontSize: '0.75rem', padding: '0 8px' }}
+                >
+                  Clear Key
+                </button>
+              )}
+            </div>
+            <span style={{ fontSize: '0.68rem', color: 'hsl(var(--text-dark))' }}>
+              Your API key is saved locally in your browser's local storage and used directly to communicate with Gemini.
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Query History Dropdown */}
       {showHistory && queryHistory.length > 0 && (
