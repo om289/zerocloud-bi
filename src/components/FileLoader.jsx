@@ -21,8 +21,8 @@ const FileLoader = memo(function FileLoader({ onTableLoaded, dbReady }) {
     if (!file) return;
     
     const nameLower = file.name.toLowerCase();
-    if (!nameLower.endsWith('.csv') && !nameLower.endsWith('.tsv') && !nameLower.endsWith('.parquet') && !nameLower.endsWith('.tab')) {
-      setError("Unsupported file format. Please upload a .csv, .tsv, or .parquet file.");
+    if (!nameLower.endsWith('.csv') && !nameLower.endsWith('.tsv') && !nameLower.endsWith('.parquet') && !nameLower.endsWith('.tab') && !nameLower.endsWith('.json')) {
+      setError("Unsupported file format. Please upload a .csv, .tsv, .parquet, or .json file.");
       return;
     }
 
@@ -92,7 +92,7 @@ const FileLoader = memo(function FileLoader({ onTableLoaded, dbReady }) {
           type="file" 
           id="file-input" 
           style={{ display: 'none' }} 
-          accept=".csv,.tsv,.parquet,.tab"
+          accept=".csv,.tsv,.parquet,.tab,.json"
           onChange={handleChange}
           disabled={!dbReady || loading}
         />
@@ -107,7 +107,7 @@ const FileLoader = memo(function FileLoader({ onTableLoaded, dbReady }) {
           <>
             <UploadCloud size={32} />
             <p>{dbReady ? "Drag & drop dataset file here" : "Initializing DuckDB..."}</p>
-            <span>Supports CSV, TSV, Parquet (.parquet)</span>
+            <span>Supports CSV, TSV, Parquet, JSON (.json)</span>
           </>
         )}
       </div>

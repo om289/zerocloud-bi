@@ -106,11 +106,14 @@ export async function registerFile(file, tableName) {
   
   const nameLower = file.name.toLowerCase();
   const isParquet = nameLower.endsWith('.parquet');
+  const isJson = nameLower.endsWith('.json');
   const isTsv = nameLower.endsWith('.tsv') || nameLower.endsWith('.tab');
   
   try {
     if (isParquet) {
       await conn.query(`CREATE OR REPLACE TABLE ${tableName} AS SELECT * FROM read_parquet('${file.name}')`);
+    } else if (isJson) {
+      await conn.query(`CREATE OR REPLACE TABLE ${tableName} AS SELECT * FROM read_json_auto('${file.name}')`);
     } else if (isTsv) {
       await conn.query(`CREATE OR REPLACE TABLE ${tableName} AS SELECT * FROM read_csv_auto('${file.name}', delim='\t')`);
     } else {
