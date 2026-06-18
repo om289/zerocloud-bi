@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect, memo } from 'react';
 import { Rnd } from 'react-rnd';
-import { ResponsiveContainer, BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine } from 'recharts';
 import { Trash2, Code, Printer, LayoutGrid, Download, MoveLeft, MoveRight, HardDriveDownload, HardDriveUpload, Filter, RefreshCw, Maximize2, CornerDownLeft, CornerDownRight, CornerUpLeft, CornerUpRight, Sparkles } from 'lucide-react';
 import { runQuery } from '../lib/duckdb';
 
@@ -263,6 +263,7 @@ const DashboardCanvas = memo(function DashboardCanvas({
             <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--bg-card))', border: '1px solid hsl(var(--border))' }} />
             <Line yAxisId="left" type="monotone" dataKey={yAxis} stroke={activeColor} strokeWidth={2} dot={{ r: 2 }} name={yAxis} />
             {yAxis2 && <Line yAxisId="right" type="monotone" dataKey={yAxis2} stroke="#06b6d4" strokeWidth={2} dot={{ r: 2 }} name={yAxis2} />}
+            {card.goalValue && <ReferenceLine yAxisId="left" y={Number(card.goalValue)} stroke="#ef4444" strokeWidth={1.5} strokeDasharray="3 3" label={{ value: `Goal: ${card.goalValue}`, fill: '#ef4444', position: 'top', fontSize: 8 }} />}
           </LineChart>
         );
       case 'area':
@@ -272,6 +273,7 @@ const DashboardCanvas = memo(function DashboardCanvas({
             <YAxis stroke="hsl(var(--text-dark))" fontSize={9} tickLine={false} />
             <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--bg-card))', border: '1px solid hsl(var(--border))' }} />
             <Area type="monotone" dataKey={yAxis} stroke={activeColor} fill={activeColor} fillOpacity={0.15} stackId={stackMode ? "1" : undefined} />
+            {card.goalValue && <ReferenceLine y={Number(card.goalValue)} stroke="#ef4444" strokeWidth={1.5} strokeDasharray="3 3" label={{ value: `Goal: ${card.goalValue}`, fill: '#ef4444', position: 'top', fontSize: 8 }} />}
           </AreaChart>
         );
       case 'pie':
@@ -311,6 +313,7 @@ const DashboardCanvas = memo(function DashboardCanvas({
             <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--bg-card))', border: '1px solid hsl(var(--border))' }} />
             <Bar yAxisId="left" dataKey={yAxis} fill={activeColor} radius={stackMode ? undefined : [2, 2, 0, 0]} stackId={stackMode ? "1" : undefined} name={yAxis} />
             {yAxis2 && <Bar yAxisId="right" dataKey={yAxis2} fill="#06b6d4" radius={stackMode ? undefined : [2, 2, 0, 0]} stackId={stackMode ? "1" : undefined} name={yAxis2} />}
+            {card.goalValue && <ReferenceLine yAxisId="left" y={Number(card.goalValue)} stroke="#ef4444" strokeWidth={1.5} strokeDasharray="3 3" label={{ value: `Goal: ${card.goalValue}`, fill: '#ef4444', position: 'top', fontSize: 8 }} />}
           </BarChart>
         );
     }

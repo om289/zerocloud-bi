@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, memo } from 'react';
-import { ResponsiveContainer, BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine } from 'recharts';
 import { BarChart2, TrendingUp, PieChart as PieIcon, AreaChart as AreaIcon, HelpCircle } from 'lucide-react';
 
 const ChartBuilder = memo(function ChartBuilder({ result, onPinCard }) {
@@ -11,6 +11,7 @@ const ChartBuilder = memo(function ChartBuilder({ result, onPinCard }) {
   const [enableTrendline, setEnableTrendline] = useState(false);
   const [stackMode, setStackMode] = useState(false);
   const [colorTheme, setColorTheme] = useState('violet');
+  const [goalValue, setGoalValue] = useState('');
 
   const themeColors = {
     violet: { primary: '#8b5cf6', secondary: '#a78bfa', accent: '#7c3aed' },
@@ -186,6 +187,7 @@ const ChartBuilder = memo(function ChartBuilder({ result, onPinCard }) {
             <Line yAxisId="left" type="monotone" dataKey={yAxis} stroke={activeTheme.primary} strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} name={yAxis} />
             {enableDualAxis && yAxis2 && <Line yAxisId="right" type="monotone" dataKey={yAxis2} stroke="#06b6d4" strokeWidth={2} dot={{ r: 4 }} name={yAxis2} />}
             {enableTrendline && <Line yAxisId="left" type="monotone" dataKey="trendline" stroke="#ef4444" strokeWidth={1.5} strokeDasharray="5 5" dot={false} activeDot={false} name="Trendline" />}
+            {goalValue && <ReferenceLine yAxisId="left" y={Number(goalValue)} stroke="#ef4444" strokeWidth={1.5} strokeDasharray="3 3" label={{ value: `Goal: ${goalValue}`, fill: '#ef4444', position: 'top', fontSize: 10 }} />}
           </LineChart>
         );
       case 'area':
@@ -207,6 +209,7 @@ const ChartBuilder = memo(function ChartBuilder({ result, onPinCard }) {
             <Legend verticalAlign="top" height={36} />
             <Area type="monotone" dataKey={yAxis} stroke={activeTheme.primary} strokeWidth={2} fillOpacity={1} fill="url(#colorArea)" stackId={stackMode ? "1" : undefined} />
             {enableTrendline && <Line type="monotone" dataKey="trendline" stroke="#ef4444" strokeWidth={1.5} strokeDasharray="5 5" dot={false} activeDot={false} name="Trendline" />}
+            {goalValue && <ReferenceLine y={Number(goalValue)} stroke="#ef4444" strokeWidth={1.5} strokeDasharray="3 3" label={{ value: `Goal: ${goalValue}`, fill: '#ef4444', position: 'top', fontSize: 10 }} />}
           </AreaChart>
         );
       case 'pie':
@@ -251,6 +254,7 @@ const ChartBuilder = memo(function ChartBuilder({ result, onPinCard }) {
             <Bar yAxisId="left" dataKey={yAxis} fill={activeTheme.primary} radius={stackMode ? undefined : [4, 4, 0, 0]} maxBarSize={60} stackId={stackMode ? "1" : undefined} name={yAxis} />
             {enableDualAxis && yAxis2 && <Bar yAxisId="right" dataKey={yAxis2} fill="#06b6d4" radius={stackMode ? undefined : [4, 4, 0, 0]} maxBarSize={60} stackId={stackMode ? "1" : undefined} name={yAxis2} />}
             {enableTrendline && <Line yAxisId="left" type="monotone" dataKey="trendline" stroke="#ef4444" strokeWidth={1.5} strokeDasharray="5 5" dot={false} activeDot={false} name="Trendline" />}
+            {goalValue && <ReferenceLine yAxisId="left" y={Number(goalValue)} stroke="#ef4444" strokeWidth={1.5} strokeDasharray="3 3" label={{ value: `Goal: ${goalValue}`, fill: '#ef4444', position: 'top', fontSize: 10 }} />}
           </BarChart>
         );
     }
@@ -346,6 +350,18 @@ const ChartBuilder = memo(function ChartBuilder({ result, onPinCard }) {
         )}
 
         <div className="form-group">
+          <label>KPI Goal Target Line</label>
+          <input 
+            type="number" 
+            className="form-select" 
+            placeholder="e.g. 1500" 
+            value={goalValue} 
+            onChange={(e) => setGoalValue(e.target.value)}
+            style={{ backgroundColor: 'hsl(var(--bg-main))', height: '28px', padding: '4px 6px', fontSize: '0.75rem' }}
+          />
+        </div>
+
+        <div className="form-group">
           <label>Color Theme</label>
           <select 
             className="form-select" 
@@ -413,6 +429,7 @@ const ChartBuilder = memo(function ChartBuilder({ result, onPinCard }) {
                   enableTrendline,
                   stackMode,
                   colorTheme,
+                  goalValue: goalValue ? Number(goalValue) : undefined,
                   title: `${chartType.charAt(0).toUpperCase() + chartType.slice(1)} of ${yAxis} by ${xAxis}`
                 });
               }
