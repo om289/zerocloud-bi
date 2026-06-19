@@ -16,6 +16,11 @@ const PivotBuilder = memo(function PivotBuilder({ activeTable, columns }) {
   const [isDragging, setIsDragging] = useState(false);
   const containerRef = useRef(null);
 
+  const handleMouseDown = useCallback((e) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
   useEffect(() => {
     const handleMouseMove = (e) => {
       if (!isDragging || !containerRef.current) return;
